@@ -1,3 +1,129 @@
 [build-system]
-requires = ["jupyter_packaging~=0.7.0", "setuptools>=40.8.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = [
+    "hatchling>=1.21.1",
+    "jupyterlab>=4.0.0,<5",
+    "hatch-nodejs-version>=0.3.2",
+]
+build-backend = "hatchling.build"
+
+[project]
+name = "ipyspeck"
+description = "Speck Jupyter Widget"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+authors = [
+    { name = "Daniel Mejia (Denphi)", email = "denphi@denphi.com" },
+]
+keywords = [
+    "IPython",
+    "Jupyter",
+    "JupyterLab",
+    "Widgets",
+    "Molecule",
+    "Visualization",
+    "Chemistry",
+]
+classifiers = [
+    "Framework :: Jupyter",
+    "Framework :: Jupyter :: JupyterLab",
+    "Framework :: Jupyter :: JupyterLab :: 3",
+    "Framework :: Jupyter :: JupyterLab :: 4",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: BSD License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Visualization",
+]
+dependencies = [
+    "ipywidgets>=7.0.0",
+]
+version = "0.7.0"
+
+[project.optional-dependencies]
+docs = [
+    "jupyter_sphinx",
+    "nbsphinx",
+    "nbsphinx-link",
+    "pypandoc",
+    "pytest_check_links",
+    "recommonmark",
+    "sphinx>=1.5",
+    "sphinx_rtd_theme",
+]
+examples = []
+test = [
+    "nbval",
+    "pytest-cov",
+    "pytest>=6.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/denphi/speck"
+Repository = "https://github.com/denphi/speck"
+Documentation = "https://github.com/denphi/speck/blob/master/widget/ipyspeck/README.md"
+"Bug Tracker" = "https://github.com/denphi/speck/issues"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build]
+artifacts = [
+    "ipyspeck/nbextension/index.*",
+    "ipyspeck/labextension/*.tgz",
+    "ipyspeck/labextension",
+]
+
+[tool.hatch.build.targets.wheel.shared-data]
+"ipyspeck/nbextension" = "share/jupyter/nbextensions/ipyspeck"
+"ipyspeck/labextension" = "share/jupyter/labextensions/ipyspeck"
+"./install.json" = "share/jupyter/labextensions/ipyspeck/install.json"
+"./ipyspeck.json" = "etc/jupyter/nbconfig/notebook.d/ipyspeck.json"
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+    ".github",
+]
+
+[tool.hatch.build.hooks.jupyter-builder]
+build-function = "hatch_jupyter_builder.npm_builder"
+ensured-targets = [
+    "ipyspeck/nbextension/index.js",
+    "ipyspeck/labextension/package.json",
+]
+skip-if-exists = [
+    "ipyspeck/nbextension/index.js",
+    "ipyspeck/labextension/package.json",
+]
+dependencies = [
+    "hatch-jupyter-builder>=0.8.3",
+]
+
+[tool.hatch.build.hooks.jupyter-builder.build-kwargs]
+path = "."
+build_cmd = "build:prod"
+npm = ["npm"]
+
+[tool.tbump]
+field = [
+    { name = "channel", default = "" },
+    { name = "release", default = "" },
+]
+file = [
+    { src = "pyproject.toml", version_template = "version = \"{major}.{minor}.{patch}{channel}{release}\"" },
+    { src = "ipyspeck/_version.py" },
+]
+
+[tool.tbump.version]
+current = "0.1.0.dev0"
+regex = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)((?P<channel>a|b|rc|.dev)(?P<release>\\d+))?"
+
+[tool.tbump.git]
+message_template = "Bump to {new_version}"
+tag_template = "v{new_version}"
