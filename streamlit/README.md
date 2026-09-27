@@ -45,10 +45,11 @@ stspeck.speck(**stspeck.from_ase(atoms), preset="metal")   # also from_rdkit, fr
   (e.g. the 4V6X ribosome); `format="pdb"` gets the legacy file, and `assembly=1` a biological
   assembly (`fetch_pdb("1STM", assembly=1)`: a complete virus capsid). Bonds listed in the file
   (CONECT, `_struct_conn`, SDF / MOL bonds) are always drawn.
-- **Films**: `film=[...]` plays shots (`stspeck.shots`, the same as ipyspeck's) in the viewer with a
-  player bar, whose download button renders an MP4 in the browser:
-  `stspeck.speck(**stspeck.fetch_pdb("4HHB"), film=[shots.orbit(6), shots.fly_to({"resName": "HEM"}, 3)],
-  video={"size": "1080p", "fps": 30})`.
+- **Videos**: `film="tour"` plays a ready-made video in the viewer (`spin`, `rock`, `orbit`, `tour`,
+  `focus`, `reveal`, `trajectory`, `showcase`); its **Save video** button makes the MP4 in the browser.
+  `film=shots.video("tour", seconds=10, title="Hemoglobin")`, `video={"size": "vertical", "quality": "best"}`;
+  your own shots work too (`stspeck.shots`, the same as ipyspeck's). The viewer's clapperboard button
+  offers the videos without code. Try `streamlit run example/video_app.py`.
 - **Trajectories**: multi-frame XYZ, multi-model PDB or mmCIF, or SDF conformers; drive `frame=` with a slider.
   MD: `stspeck.speck(**stspeck.from_mdtraj(traj), frame=f)` (or `from_mdanalysis`); frames go as
   binary coordinates (`trajectory=`), and `count_frames(data, trajectory)` gives the slider range

@@ -14,6 +14,11 @@ const speckView = require('./view.js');
 const speckSystem = require('./system.js');
 const speckCartoon = require('./cartoon.js');
 const speckSelect = require('./select.js');
+const speckRecipes = require('./recipes.js');
+
+// Ready-made videos (see recipes.js): [{name, label, seconds, needs, description}].
+export const VIDEO_RECIPES: { name: string; label: string; seconds: number; needs: string | null; description: string }[] =
+  speckRecipes.RECIPES;
 
 // Output sizes by name ([width, height]).
 export const VIDEO_SIZES: { [name: string]: [number, number] } = {
@@ -27,6 +32,8 @@ export const VIDEO_SIZES: { [name: string]: [number, number] } = {
   portrait: [1080, 1350],
 };
 
+const QUALITY_SAMPLES: { [name: string]: number } = { draft: 64, good: 256, best: 512 };
+
 // What the studio needs from the viewer.
 export interface StudioContext {
   el: HTMLElement;
@@ -37,6 +44,10 @@ export interface StudioContext {
   system(): any;
   defaults: { [key: string]: any };
   rebuildTraits: string[];
+  // Ligand residues, largest first.
+  ligands(): { selection: any; atoms: number }[];
+  // A short message in the viewer's corner.
+  flash(text: string): void;
   queueExport<T>(job: () => Promise<T>): Promise<T>;
   // Pauses (true) or resumes the on-screen loop while an export uses the renderer.
   setExporting(on: boolean): void;
@@ -54,6 +65,8 @@ export interface FilmOptions {
   width?: number;
   height?: number;
   fps?: number;
+  // 'draft', 'good' (default) or 'best': ambient-occlusion samples per frame.
+  quality?: string;
   samples?: number;
   aoRes?: number;
   supersample?: number;
@@ -305,6 +318,14 @@ export class FilmStudio {
         return { center: [x, y, z], radius: r + 2 };
       },
       frames: system.frames ? system.frames.length : 1,
+      center: (() => {
+        let x = 0, y = 0, z = 0;
+        const n = Math.max(1, system.atoms.length);
+        for (const a of system.atoms) {
+          x += a.x; y += a.y; z += a.z;
+        }
+        return [x / n, y / n, z / n];
+      })(),
       // Cameras from cameraState() were taken at the on-screen size.
       camera: (c: any) => {
         if (!c || !c.rotation || c.rotation.length !== 16) throw new Error('keyframe camera needs a 16-number rotation');
@@ -323,10 +344,34 @@ export class FilmStudio {
     };
   }
 
+  // What recipes need to know about the structure.
+  private info() {
+    const system = this.ctx.system();
+    const ligand = this.ctx.ligands()[0];
+    return { ligand: ligand ? ligand.selection : null, frames: system && system.frames ? system.frames.length : 1 };
+  }
+
+  // Recipes with whether each can be made for the loaded structure.
+  recipes() {
+    const info = this.info();
+    return VIDEO_RECIPES.map((r) => ({ ...r, available: speckRecipes.available(r, info) }));
+  }
+
+  // A film as shots. Films are lists of shots, the name of a recipe
+  // ('tour'), or {recipe or shots, seconds, target, title, subtitle}.
+  resolve(film: any): any[] {
+    const spec = typeof film === 'string' ? { recipe: film } : Array.isArray(film) ? { shots: film } : film || {};
+    const shots = spec.recipe ? speckRecipes.build(spec.recipe, this.info(), spec) : spec.shots;
+    if (!Array.isArray(shots)) {
+      throw new Error('a film is a list of shots or the name of a video: ' + VIDEO_RECIPES.map((r) => r.name).join(', '));
+    }
+    return speckRecipes.withTitle(shots, spec.title, spec.subtitle);
+  }
+
   // Seconds a film lasts (throws on a bad film).
   duration(film: any): number {
     if (!this.ctx.system()) throw new Error('nothing to film yet');
-    return speckFilm.compile(film, this.scene(this.ctx.view())).duration;
+    return speckFilm.compile(this.resolve(film), this.scene(this.ctx.view())).duration;
   }
 
   // A view showing a state: the base values, the state's settings and camera.
@@ -390,13 +435,13 @@ export class FilmStudio {
       base.rotation = new Float32Array(live.rotation);
       base.resolution = { x: w * ss, y: h * ss };
       base.aoRes = options.aoRes || Math.max(1024, live.aoRes);
-      base.aoSamples = options.samples || 256;
+      base.aoSamples = options.samples || QUALITY_SAMPLES[options.quality || 'good'] || 256;
       base.spf = 128;
       const sameAspect = Math.abs(w / h - live.resolution.x / live.resolution.y) < 0.01;
       if (options.fit || (options.fit === undefined && !sameAspect)) {
         speckView.center(base, system);
       }
-      const timeline = speckFilm.compile(film, this.scene(base));
+      const timeline = speckFilm.compile(this.resolve(film), this.scene(base));
       const count = Math.max(1, Math.round(timeline.duration * fps));
 
       const writer = mp4 ? new speckVideo.VideoWriter({ width: w, height: h, fps: fps, bitrate: options.bitrate }) : null;
@@ -454,6 +499,7 @@ export class FilmStudio {
     link.click();
     document.body.removeChild(link);
     setTimeout(() => URL.revokeObjectURL(link.href), 60000);
+    this.ctx.flash('Saved ' + link.download + ' (' + (blob.size / 1e6).toFixed(1) + ' MB) to your downloads');
     return result;
   }
 
@@ -524,7 +570,7 @@ export class FilmStudio {
     this.stop();
     this.ctx.flush();
     const live = this.ctx.view();
-    const timeline = speckFilm.compile(film, this.scene(live));
+    const timeline = speckFilm.compile(this.resolve(film), this.scene(live));
     const base = { ...live, translation: { ...live.translation }, rotation: new Float32Array(live.rotation) };
     const bar = document.createElement('div');
     bar.className = 'ipyspeck-player';
@@ -554,14 +600,17 @@ export class FilmStudio {
     bar.appendChild(slider);
     bar.appendChild(time);
     if (speckVideo.supported()) {
-      bar.appendChild(button('Download MP4', ICON_DOWNLOAD, () => {
+      const save = button('Save video (MP4)', ICON_DOWNLOAD, () => {
         const f = this.preview ? this.preview.film : film;
         const o = this.preview ? this.preview.options : options;
         this.stop();
         this.download(f, o).catch((e) => {
           if (!(e instanceof Cancelled)) this.ctx.panel.fail('Video export failed: ' + (e.message || e));
         });
-      }));
+      });
+      save.className = 'ipyspeck-player-save';
+      save.insertAdjacentHTML('beforeend', '<span>Save video</span>');
+      bar.appendChild(save);
     }
     bar.appendChild(button('Close preview', ICON_CLOSE, () => this.stop()));
     const titles = document.createElement('canvas');
@@ -612,6 +661,11 @@ export class FilmStudio {
     this.ctx.restoreLive(this.built !== this.geometryKey(live, null) || this.built !== this.liveKey);
     this.built = null;
     this.ctx.redraw();
+  }
+
+  // Changes an export option of the film being previewed (e.g. its size).
+  setOption(key: string, value: any) {
+    if (this.preview) this.preview.options = { ...this.preview.options, [key]: value };
   }
 
   // A setting changed while previewing: it becomes part of the base.

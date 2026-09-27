@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Ready-made videos by name (`spin`, `rock`, `orbit`, `tour`, `focus`, `reveal`, `trajectory`, `showcase`):
+  they find the structure's ligand or trajectory and turn a ligand toward the viewer; `seconds`, `target`,
+  `title` and `subtitle` adjust them (`shots.RECIPES`, `shots.video()`)
+- A video button (clapperboard) in the viewer's toolbar: pick a video and a size, watch it, press
+  **Save video**; no code needed
+- Step-by-step video notebooks for researchers (`example/videos`) and preview clips of every video
 - Films: camera moves and changes over time as a list of shots (`shots`: turntable, rock, orbit, zoom,
   fly_to a selection, home, rack_focus, cut_open, fade any setting, crossfade, trajectory, title, keyframes,
   together), with easing
@@ -19,7 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   progress with a Cancel button
 - Trajectories play smoothly in films: coordinates are interpolated between frames
 - `Speck.preview(film)`, `Speck.stop_preview()`, `Speck.save_video(filename, film, ...)` (MP4 from the
-  browser; GIF, WebM, MOV or PNG frames written in Python) and `Speck.keyframe()` for `shots.keyframes`
+  browser; GIF, WebM, MOV or PNG frames written in Python) and `Speck.keyframe()` for `shots.keyframes`;
+  `save_video("movie.mp4")` alone makes a spin, `quality='draft' | 'good' | 'best'`, and the viewer says
+  when the file is saved
 - Demo site: an Animate section with ready-made films, preview and MP4 export, included in Copy as Python
 
 ## [0.8.3] - 2026-09-27

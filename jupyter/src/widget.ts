@@ -227,11 +227,13 @@ export class SpeckView extends DOMWidgetView {
         try {
           viewer.playFilm(message.film, message.options || {});
         } catch (e) {
-          viewer.showNotice('Film preview: ' + ((e as Error).message || e));
+          viewer.showNotice('Video: ' + ((e as Error).message || e));
         }
         return;
       case 'stopFilm':
         return viewer.stopFilm();
+      case 'flash':
+        return viewer.flash(message.text);
       case 'saveVideo':
         this.saveVideo(message);
         return;

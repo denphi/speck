@@ -739,60 +739,84 @@ class Speck(widgets.DOMWidget):
             key['time'] = time
         return key
 
-    def preview(self, film, loop=True, background=None, credit=None):
-        """Play a film (a list of shots, see ipyspeck.shots) in the widget,
-        with a player bar to pause, scrub, download an MP4 or close. The view
-        returns to how it was when the player closes. `background` and
-        `credit` are used by the player's download button (see save_video)."""
+    def preview(self, film='spin', seconds=None, target=None, title=None, subtitle=None, loop=True,
+                background=None, credit=None, size=None):
+        """Play a video in the widget, with a player bar: play / pause, a time
+        slider, "Save video" (downloads an MP4 in your browser) and close.
+
+        film: a ready-made video by name ('spin', 'rock', 'orbit', 'tour',
+        'focus', 'reveal', 'trajectory', 'showcase'; see shots.RECIPES) or
+        your own list of shots. seconds, target, title, subtitle: as in
+        save_video. The view returns to how it was when the player closes.
+        The widget's video button (clapperboard) does the same without code.
+        """
         options = {'loop': loop}
-        if background is not None:
-            options['background'] = background
-        if credit is not None:
-            options['credit'] = credit
-        self.send({'do': 'playFilm', 'film': _shots.film(film), 'options': options})
+        for key, value in (('background', background), ('credit', credit), ('size', size)):
+            if value is not None:
+                options[key] = value
+        self.send({'do': 'playFilm', 'film': _shots.spec(film, seconds, target, title, subtitle),
+                   'options': options})
 
     def stop_preview(self):
-        """Close the film player."""
+        """Close the video player."""
         self.send({'do': 'stopFilm'})
 
-    def save_video(self, filename, film, fps=30, size='1080p', samples=256, aoRes=1024, supersample=1,
-                   background='#ffffff', vignette=0.0, motion_blur=0, credit=None, bitrate=None,
-                   callback=None):
-        """Render a film (a list of shots, see ipyspeck.shots) in the browser
-        and save it.
+    def save_video(self, filename='movie.mp4', film='spin', seconds=None, target=None, title=None,
+                   subtitle=None, size='1080p', fps=30, quality='good', background='#ffffff',
+                   vignette=0.0, motion_blur=0, credit=None, samples=None, aoRes=1024, supersample=1,
+                   bitrate=None, callback=None):
+        """Render a video of the structure and save it next to the notebook.
 
-        Every frame is fully shaded (`samples` ambient-occlusion samples,
-        fixed to the molecule so nothing flickers). .mp4 files are encoded
-        in the browser (H.264, WebCodecs); where it cannot, and for .gif,
-        .webm, .mov or a directory (numbered PNGs), the frames come back
-        to Python (needs Pillow; video formats also imageio with ffmpeg).
+        The simplest call is w.save_video("movie.mp4"): one full turn. Pick a
+        ready-made video by name:
 
-        size: '480p', '720p', '1080p', '1440p', '4k', 'square' (1080 x 1080),
-        'vertical' (1080 x 1920), 'portrait' (1080 x 1350) or (width, height);
-        the longest side is at most 4096. When the aspect ratio differs from
-        the widget's, the structure is fitted to the picture first.
-        background: a color, a list of colors for a vertical gradient, or
-        {'center': color, 'edge': color} for a radial one.
-        vignette: darkened corners, 0 - 1. motion_blur: sub-frames averaged
-        per frame (e.g. 4; each one costs a render). credit: small text in
-        the corner. bitrate: bits per second (default about 0.2 per pixel).
+            w.save_video("tour.mp4", "tour", title="Hemoglobin")
 
-        Rendering runs in the browser after the current cell finishes and
-        shows its progress (with a Cancel button) in the widget, which must
-        be displayed; `callback(filename)` runs when the file is written.
+        'spin', 'rock', 'orbit', 'reveal' (cut open) and 'showcase' work for
+        any structure; 'tour' and 'focus' visit the largest ligand (or
+        `target`, e.g. {"chain": "B"}); 'trajectory' plays the frames. See
+        shots.RECIPES. You can also pass your own list of shots.
+
+        seconds: length of a ready-made video. title / subtitle: text shown
+        over the first seconds. size: '1080p' (default), '720p', '1440p',
+        '4k', 'square', 'vertical' (9:16, phones), 'portrait' (4:5) or
+        (width, height). fps: frames per second. quality: 'draft' (fast
+        preview), 'good' or 'best'. background: a color, a list of colors
+        (vertical gradient) or {'center': ..., 'edge': ...} (radial).
+        vignette: darker corners, 0 - 1. motion_blur: e.g. 4 for smoother
+        fast moves (slower). credit: small text in the corner.
+
+        The video is rendered in the browser after the cell finishes, with
+        its progress (and a Cancel button) in the widget, which must be on
+        screen; the file appears a moment after it completes. MP4 is encoded
+        by the browser; .gif, .webm, .mov or a folder name (numbered PNG
+        files) are written by Python (needs Pillow; .webm / .mov also
+        imageio with ffmpeg). `callback(filename)` runs when the file is
+        written.
         """
-        film = _shots.film(film)
+        spec = _shots.spec(film, seconds, target, title, subtitle)
         ext = os.path.splitext(filename)[1].lower()
         if ext not in ('.mp4', '.gif', '.webm', '.mov', ''):
-            raise ValueError('unsupported video format %r (use .mp4, .gif, .webm, .mov or a directory)' % ext)
+            raise ValueError('unsupported video format %r (use .mp4, .gif, .webm, .mov or a folder name)' % ext)
+        if quality not in _QUALITY:
+            raise ValueError("quality must be 'draft', 'good' or 'best'")
         if isinstance(size, (list, tuple)):
             size = [int(size[0]), int(size[1])]
-        options = dict(film=film, fps=fps, size=size, samples=samples, aoRes=aoRes,
+        options = dict(film=spec, fps=fps, size=size, samples=samples or _QUALITY[quality], aoRes=aoRes,
                        supersample=supersample, background=background, vignette=vignette,
                        motionBlur=motion_blur, credit=credit, bitrate=bitrate,
                        format='mp4' if ext == '.mp4' else 'frames')
-        done = (lambda _: callback(filename)) if callback else None
+
+        def done(_):
+            size_mb = _size_mb(filename)
+            self.send({'do': 'flash', 'text': 'Saved %s%s' % (os.path.basename(filename.rstrip('/')) or filename,
+                                                             ' (%.1f MB)' % size_mb if size_mb else '')})
+            if callback:
+                callback(filename)
+
         self._request('saveVideo', 'video', filename, done, options, fps=fps, chunks={})
+        print('Making %s: %.0f seconds of video, %s. Progress is shown in the viewer; '
+              'the file is saved here when it is done.' % (filename, _shots.spec_seconds(spec), _size_label(size)))
 
     def _request(self, do, kind, filename, callback, options, **extra):
         rid = uuid.uuid4().hex
@@ -901,6 +925,30 @@ class Speck(widgets.DOMWidget):
         """Switch to the next element palette."""
         i = _COLOR_SCHEMES.index(self.colorScheme)
         self.setColorSchema(_COLOR_SCHEMES[(i + 1) % len(_COLOR_SCHEMES)])
+
+
+# Ambient-occlusion samples per video frame.
+_QUALITY = {'draft': 64, 'good': 256, 'best': 512}
+
+
+def _size_mb(path):
+    try:
+        if os.path.isdir(path):
+            return sum(os.path.getsize(os.path.join(path, f)) for f in os.listdir(path)) / 1e6
+        return os.path.getsize(path) / 1e6
+    except OSError:
+        return 0
+
+
+_SIZES = {'480p': (854, 480), '720p': (1280, 720), '1080p': (1920, 1080), '1440p': (2560, 1440),
+          '4k': (3840, 2160), 'square': (1080, 1080), 'vertical': (1080, 1920), 'portrait': (1080, 1350)}
+
+
+def _size_label(size):
+    if isinstance(size, (list, tuple)):
+        return '%d x %d' % (size[0], size[1])
+    w, h = _SIZES.get(str(size).lower(), (0, 0))
+    return '%s (%d x %d)' % (size, w, h) if w else str(size)
 
 
 def _write_animation(filename, frames, fps):

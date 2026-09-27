@@ -21,7 +21,8 @@ var glm = require("./gl-matrix");
 //   rock        swing back and forth and return (degrees=30, cycles=1)
 //   orbit       turn about an axis tilted toward the viewer (degrees=360, tilt=20)
 //   zoom        move closer (factor=2; below 1 moves away)
-//   fly_to      center a selection and fit it (zoom: magnification instead of fitting)
+//   fly_to      center a selection and fit it (zoom: magnification instead of
+//               fitting; face: also turn so the selection faces the viewer)
 //   home        back to the camera the film started with
 //   rack_focus  depth of field moves to a selection (to), from the current focus
 //   cut_open    the cutaway plane moves in (to=0.5, axis)
@@ -123,6 +124,21 @@ function screenAxis(name) {
     throw new Error("axis must be 'x', 'y', 'z' or [x, y, z]");
 }
 
+// The rotation after q that turns `point` toward the viewer, as seen from
+// `center` (so a ligand in a pocket is seen from outside, not through the
+// protein), turning as little as possible.
+function facing(q, point, center) {
+    var d = glm.vec3.sub(glm.vec3.create(), point, center || [0, 0, 0]);
+    if (glm.vec3.length(d) < 1e-3) return q;
+    glm.vec3.normalize(d, d);
+    var seen = glm.vec3.transformQuat(glm.vec3.create(), d, q);
+    var turn = glm.quat.rotationTo(glm.quat.create(), seen, [0, 0, 1]);
+    // Only part of the way when the point is far behind: a quarter turn
+    // off-axis looks more natural than staring straight down the pocket.
+    var target = glm.quat.slerp(glm.quat.create(), glm.quat.create(), turn, 0.85);
+    return glm.quat.normalize(glm.quat.create(), glm.quat.multiply(glm.quat.create(), target, q));
+}
+
 function catmull(p0, p1, p2, p3, u) {
     var u2 = u * u, u3 = u2 * u;
     return 0.5 * (2 * p1 + (-p0 + p2) * u + (2 * p0 - 5 * p1 + 4 * p2 - p3) * u2 + (-p0 + 3 * p1 - 3 * p2 + p3) * u3);
@@ -132,6 +148,7 @@ function catmull(p0, p1, p2, p3, u) {
 //   start              the state at time 0
 //   value(key)         a setting of the starting view
 //   selection(sel)     {center: [x, y, z], radius} of a selection, or null
+//   center             [x, y, z], the middle of the structure
 //   frames             number of trajectory frames
 //   camera(c)          {q, target, span} for a camera from cameraState()
 //   focusDepth(sel, q) normalized depth of a selection seen with rotation q
@@ -197,7 +214,9 @@ function compile(film, scene) {
                     var sel = scene.selection(shot.selection || {});
                     if (!sel) throw new Error("fly_to: the selection " + JSON.stringify(shot.selection) + " matches no atoms");
                     var span = shot.zoom ? start.span / +shot.zoom : Math.max(12, 2.6 * sel.radius);
-                    to = {q: start.q, target: sel.center, span: span, settings: {}};
+                    var q = start.q;
+                    if (shot.face) q = facing(start.q, sel.center, scene.center);
+                    to = {q: q, target: sel.center, span: span, settings: {}};
                 }
                 keys = [{time: 0, q: start.q, target: start.target, span: start.span, settings: {}},
                         {time: duration, q: to.q, target: to.target, span: to.span, settings: {}}];

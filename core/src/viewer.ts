@@ -13,7 +13,7 @@ const speckParse = require('./parse-async.js');
 const speckFormats = require('./formats.js');
 import { LoadPanel } from './progress';
 import { FilmStudio, FilmOptions, FilmResult } from './cinema';
-export { VIDEO_SIZES, FilmOptions, FilmResult } from './cinema';
+export { VIDEO_SIZES, VIDEO_RECIPES, FilmOptions, FilmResult } from './cinema';
 const speckVideo = require('./video.js');
 // Whether this browser can encode MP4 video (WebCodecs).
 export function videoSupported(): boolean {
@@ -182,7 +182,24 @@ const LOOK_LABELS: { [key: string]: string } = {
   metal: 'Metal', glass: 'Glass surface', goodsell: 'Goodsell illustration',
 };
 
-type MenuSection = (title: string, items: [string, string][], current: string, pick: (v: string) => void) => void;
+// Menu items: [value, label] or [value, label, description (tooltip)].
+type MenuItem = [string, string] | [string, string, string];
+type MenuSection = (title: string, items: MenuItem[], current: string, pick: (v: string) => void) => void;
+
+// Amino acids and nucleotides, never taken as ligands.
+const STANDARD_RESIDUES = new Set([
+  'ALA', 'ARG', 'ASN', 'ASP', 'CYS', 'GLN', 'GLU', 'GLY', 'HIS', 'ILE', 'LEU', 'LYS', 'MET', 'PHE', 'PRO', 'SER',
+  'THR', 'TRP', 'TYR', 'VAL', 'SEC', 'PYL', 'MSE', 'A', 'C', 'G', 'U', 'I', 'DA', 'DC', 'DG', 'DT', 'DU', 'DI',
+]);
+
+// Video sizes offered in the toolbar's video menu.
+const VIDEO_MENU_SIZES: MenuItem[] = [
+  ['1080p', 'HD 1080p', '1920 × 1080, for slides and screens'],
+  ['4k', '4K', '3840 × 2160, for large screens (slower)'],
+  ['square', 'Square', '1080 × 1080, for social media posts'],
+  ['vertical', 'Vertical 9:16', '1080 × 1920, for phones and stories'],
+  ['720p', '720p', '1280 × 720, a smaller file'],
+];
 
 // 16x16 icons; drawn with currentColor so CSS controls the state colors.
 const ICONS: { [key: string]: string } = {
@@ -249,6 +266,11 @@ const ICONS: { [key: string]: string } = {
     'M 5.8 4.5 C 5 4.5 4.4 3.9 4.4 3.1 C 4.4 2.4 5 1.8 5.8 1.8 C 6.5 1.8 7.1 2.4 7.1 3.1 C 7.1 3.9 6.5 4.5 5.8 4.5 Z ' +
     'M 10.2 4.5 C 9.4 4.5 8.9 3.9 8.9 3.1 C 8.9 2.4 9.4 1.8 10.2 1.8 C 10.9 1.8 11.5 2.4 11.5 3.1 C 11.5 3.9 10.9 4.5 10.2 4.5 Z ' +
     'M 12.9 8 C 12.1 8 11.5 7.4 11.5 6.7 C 11.5 5.9 12.1 5.3 12.9 5.3 C 13.6 5.3 14.2 5.9 14.2 6.7 C 14.2 7.4 13.6 8 12.9 8 Z"/>',
+  // Clapperboard: make a video
+  video:
+    '<path stroke="none" d="M 1 6.5 H 15 V 14 C 15 14.6 14.6 15 14 15 H 2 C 1.4 15 1 14.6 1 14 Z"/>' +
+    '<path stroke="none" d="M 0.9 5.4 L 0.5 3.4 C 0.4 2.8 0.8 2.3 1.3 2.2 L 12.8 0.3 C 13.3 0.2 13.8 0.6 13.9 1.1 L 14.2 3.1 Z"/>' +
+    '<path d="M 4.2 2.2 L 5.4 4.4 M 7.8 1.6 L 9 3.8 M 11.3 1 L 12.5 3.2" fill="none" stroke="#fff" stroke-width="1.2" opacity="0.9"/>',
   camera:
     '<path stroke="none" d="M 14.7 4 L 12.5 4 C 12.3 4 12.1 3.9 12 3.8 C 10.8 2.5 10.4 2 9.9 2 L 6.3 2 C 5.8 2 5.4 2.5 4.2 3.8 ' +
     'C 4 3.9 3.8 4 3.7 4 L 1.4 4 C 0.7 4 0 4.5 0 5.3 L 0 12.6 C 0 13.3 0.7 14 1.4 14 L 14.7 14 C 15.5 14 16 13.3 16 12.6 ' +
@@ -271,6 +293,8 @@ export interface ViewerHost {
   framesChanged?(nframes: number): void;
   // Replaces the camera button's default (download the on-screen image).
   snapshot?(): void;
+  // Options for videos made from the toolbar (e.g. the page's background).
+  videoOptions?(): FilmOptions;
 }
 
 export interface RenderedImage {
@@ -316,6 +340,10 @@ export class SpeckViewer {
   private focusMode = false;
   private focusButton: HTMLElement | null = null;
   private colorButton: HTMLElement | null = null;
+  private videoButton: HTMLElement | null = null;
+  private videoSize = '1080p';
+  private lastRecipe = '';
+  private flashTimer: any = null;
   private lookButton: HTMLElement | null = null;
   private menuEl!: HTMLDivElement;
   private menuOwner: HTMLElement | null = null;
@@ -472,6 +500,9 @@ export class SpeckViewer {
     this.colorButton.setAttribute('aria-haspopup', 'menu');
     this.colorButton.setAttribute('aria-expanded', 'false');
     this.addButton(output, 'camera', 'Save PNG', () => (this.host.snapshot ? this.host.snapshot() : this.snapshot()));
+    this.videoButton = this.addButton(output, 'video', 'Make a video', () => this.toggleVideoMenu());
+    this.videoButton.setAttribute('aria-haspopup', 'menu');
+    this.videoButton.setAttribute('aria-expanded', 'false');
 
     this.el.appendChild(this.toolbarEl);
 
@@ -508,8 +539,15 @@ export class SpeckViewer {
   }
 
   setStatus(text: string) {
+    clearTimeout(this.flashTimer);
     this.statusEl.textContent = text;
     this.statusEl.style.display = text ? '' : 'none';
+  }
+
+  // A short message in the corner (e.g. "Saved movie.mp4"), gone after a while.
+  flash(text: string, ms = 6000) {
+    this.setStatus(text);
+    this.flashTimer = setTimeout(() => this.setStatus(''), ms);
   }
 
   private addGroup(): HTMLDivElement {
@@ -1038,8 +1076,9 @@ export class SpeckViewer {
         h.textContent = title;
         menu.appendChild(h);
       }
-      for (const [value, label] of items) {
+      for (const [value, label, hint] of items as [string, string, string?][]) {
         const item = document.createElement('button');
+        if (hint) item.title = hint;
         item.type = 'button';
         item.className = 'ipyspeck-menu-item' + (value === current ? ' active' : '');
         item.setAttribute('role', 'menuitemradio');
@@ -1103,6 +1142,34 @@ export class SpeckViewer {
     this.toggleMenu(this.lookButton, 'Looks', (section) =>
       section('', Object.keys(LOOKS).map((k) => [k, LOOK_LABELS[k]] as [string, string]), this.currentLook(),
         (v) => this.applyLook(v)));
+  }
+
+  // --- videos ---------------------------------------------------------------
+
+  // Ready-made videos for this structure (see recipes.js) and the size of
+  // the video; picking one plays it with the player, whose button saves it.
+  toggleVideoMenu() {
+    this.toggleMenu(this.videoButton, 'Make a video', (section) => {
+      const recipes = this.system ? this.studio.recipes().filter((r) => r.available) : [];
+      section('Make a video', recipes.map((r) => [r.name, r.label, r.description] as MenuItem), this.lastRecipe,
+        (name) => {
+          this.closeMenu(true);
+          this.lastRecipe = name;
+          try {
+            this.playFilm(name, this.videoOptions());
+          } catch (e) {
+            this.flash((e as Error).message || String(e), 9000);
+          }
+        });
+      section('Video size', VIDEO_MENU_SIZES, this.videoSize, (size) => {
+        this.videoSize = size;
+        if (this.studioInstance) this.studioInstance.setOption('size', size);
+      });
+    });
+  }
+
+  private videoOptions(): FilmOptions {
+    return { size: this.videoSize, ...(this.host.videoOptions ? this.host.videoOptions() : {}) };
   }
 
   // --- colors ---------------------------------------------------------------
@@ -1185,6 +1252,8 @@ export class SpeckViewer {
     const groups = new Map<string, { selection: any; atoms: number }>();
     for (const i of speckSelect.indices(this.system, { ligands: true })) {
       const a = this.system.atoms[i];
+      // Chain-end residues (e.g. a 5' nucleotide without phosphate) are not ligands.
+      if (STANDARD_RESIDUES.has(a.resName)) continue;
       const key = a.chain + '|' + a.resName + '|' + a.resSeq;
       const g = groups.get(key);
       if (g) g.atoms++;
@@ -1358,6 +1427,8 @@ export class SpeckViewer {
         system: () => this.system,
         defaults: VIEW_DEFAULTS,
         rebuildTraits: REBUILD_TRAITS,
+        ligands: () => this.ligands(),
+        flash: (text) => this.flash(text),
         queueExport: (job) => this.queueExport(job),
         flush: () => this.flushRebuild(),
         setExporting: (on) => {
@@ -1387,6 +1458,11 @@ export class SpeckViewer {
 
   stopFilm() {
     if (this.studioInstance) this.studioInstance.stop();
+  }
+
+  // Ready-made videos with whether each can be made for this structure.
+  videoRecipes() {
+    return this.system ? this.studio.recipes() : [];
   }
 
   // Seconds a film lasts; throws if the film is not valid for this structure.

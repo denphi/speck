@@ -107,9 +107,9 @@ function showFilm(film: any) {
     if (!v.loaded) return false;
     clearInterval(filmTimer);
     try {
-      v.playFilm(film.shots, { ...(film.video || {}), loop: film.loop });
+      v.playFilm(film.film, { ...(film.video || {}), loop: film.loop });
     } catch (e) {
-      v.showNotice('Film: ' + ((e as Error).message || e));
+      v.showNotice('Video: ' + ((e as Error).message || e));
     }
     return true;
   };

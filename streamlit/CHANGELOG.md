@@ -3,6 +3,12 @@
 ## [Unreleased]
 
 ### Added
+- Ready-made videos by name (`spin`, `rock`, `orbit`, `tour`, `focus`, `reveal`, `trajectory`, `showcase`):
+  they find the structure's ligand or trajectory and turn a ligand toward the viewer; `seconds`, `target`,
+  `title` and `subtitle` adjust them (`shots.RECIPES`, `shots.video()`)
+- A video button (clapperboard) in the viewer's toolbar: pick a video and a size, watch it, press
+  **Save video**; no code needed
+- Step-by-step video notebooks for researchers (`example/videos`) and preview clips of every video
 - Films: camera moves and changes over time as a list of shots (`shots`: turntable, rock, orbit, zoom,
   fly_to a selection, home, rack_focus, cut_open, fade any setting, crossfade, trajectory, title, keyframes,
   together), with easing
@@ -13,8 +19,8 @@
   4:5), solid / gradient / radial backgrounds, vignette, titles, credit line, optional motion blur;
   progress with a Cancel button
 - Trajectories play smoothly in films: coordinates are interpolated between frames
-- `speck(..., film=[...], film_loop=True, video={...})`: the film plays in the component, and its download
-  button saves the MP4
+- `speck(..., film="tour" | shots.video(...) | [...], film_loop=True, video={...})`: the video plays in the
+  component, and its Save video button saves the MP4; `example/video_app.py` makes a video of any PDB entry
 - Demo site: an Animate section with ready-made films, preview and MP4 export, included in Copy as Python
 
 ## [0.8.3] - 2026-09-27

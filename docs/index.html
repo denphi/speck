@@ -71,6 +71,13 @@
   button:hover { border-color: #c6ccd6; }
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   .load { display: flex; gap: 6px; }
+  .stage:has(.ipyspeck-player) .hint { display: none; }
+  .video-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; margin-top: 12px; }
+  .video-grid figure { margin: 0; }
+  .video-grid video { width: 100%; aspect-ratio: 16 / 9; border-radius: 8px; background: #eef1f5; display: block; }
+  .video-grid figcaption { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  .film-sample { display: block; width: 100%; aspect-ratio: 16 / 9; margin: 6px 0 0; border-radius: 6px;
+    background: #eef1f5; object-fit: cover; }
   #filmPreview, #filmSave { flex: 1; }
   .chips, .presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
   .chips button, .presets button { padding: 4px 9px; font-size: 12.5px; border-radius: 999px; }
@@ -107,6 +114,7 @@
   <h1>ipyspeck <a class="version" href="https://pypi.org/project/ipyspeck/0.8.3/" title="Release on PyPI">0.8.3</a> <span>molecular graphics for Jupyter and Streamlit</span></h1>
   <nav>
     <a href="#install">Install</a>
+    <a href="#videos">Videos</a>
     <a href="#gallery">Gallery</a>
     <a href="react.html">React example</a>
     <a href="https://pypi.org/project/ipyspeck/">PyPI</a>
@@ -162,6 +170,23 @@
       <label class="check"><input type="checkbox" id="bgVignette"> Vignette</label>
       <label class="row">Studio floor<input type="range" data-trait="floor" min="0" max="1" step="0.01" data-digits="2"><span class="v"></span></label>
       <label class="row">Reflection<input type="range" data-trait="floorReflection" min="0" max="1" step="0.01" data-digits="2"><span class="v"></span></label>
+      </div>
+    </details>
+    <details class="sec" data-sec="animate" open>
+      <summary>Make a video<span class="sum-hint">MP4</span></summary>
+      <div class="sec-body">
+      <p class="note">Try one: it loads the structure and plays its video.</p>
+      <div class="chips" id="filmExamples"></div>
+      <div class="field"><span>Video</span><select id="filmKind" aria-describedby="filmAbout"></select></div>
+      <video id="filmSample" class="film-sample" autoplay muted loop playsinline aria-label="What this video looks like"></video>
+      <p class="note" id="filmAbout"></p>
+      <label class="row">Length (s)<input type="range" id="filmSeconds" min="3" max="30" step="1"><span class="v" id="filmSecondsV"></span></label>
+      <label class="field"><span>Title</span><input type="text" id="filmTitle" placeholder="Optional, e.g. Hemoglobin" spellcheck="false"></label>
+      <div class="field"><span>Size</span><select id="filmSize"><option value="1080p" selected>HD 1080p (slides)</option><option value="4k">4K (large screens)</option><option value="square">Square (social media)</option><option value="vertical">Vertical 9:16 (phones)</option><option value="720p">720p (small file)</option></select></div>
+      <div class="field"><span>Smoothness</span><select id="filmFps"><option value="24">24 frames/s (film)</option><option value="30" selected>30 frames/s</option><option value="60">60 frames/s (slower)</option></select></div>
+      <div class="field"><span>Quality</span><select id="filmQuality"><option value="draft">Draft (fast)</option><option value="good" selected>Good</option><option value="best">Best (slow)</option></select></div>
+      <div class="load"><button id="filmPreview">&#9654; Preview</button><button class="primary" id="filmSave">Save video</button></div>
+      <p class="note" id="filmNote">The video is made in your browser; nothing is uploaded. The clapperboard button in the viewer offers the same videos.</p>
       </div>
     </details>
     <details class="sec" data-sec="colors">
@@ -274,23 +299,6 @@
       <label class="row">Unit cell radius<input type="range" data-trait="cellRadius" min="0.02" max="0.4" step="0.01" data-digits="2"><span class="v"></span></label>
       </div>
     </details>
-    <details class="sec" data-sec="animate" open>
-      <summary>Animate<span class="sum-hint">video</span></summary>
-      <div class="sec-body">
-      <div class="field"><span>Shot</span><select id="filmKind">
-        <option value="turntable">Turntable</option><option value="rock">Rock back and forth</option>
-        <option value="orbit">Tilted orbit</option><option value="tour">Fly to the ligand and back</option>
-        <option value="focus">Rack focus on the ligand</option><option value="cut">Cut open</option>
-        <option value="trajectory">Play the trajectory</option></select></div>
-      <label class="row">Seconds<input type="range" id="filmSeconds" min="2" max="20" step="1" value="6"><span class="v" id="filmSecondsV">6</span></label>
-      <label class="field"><span>Title</span><input type="text" id="filmTitle" placeholder="Optional" spellcheck="false"></label>
-      <div class="field"><span>Size</span><select id="filmSize"><option value="720p">720p</option><option value="1080p" selected>1080p</option><option value="4k">4K</option><option value="square">Square 1:1</option><option value="vertical">Vertical 9:16</option></select></div>
-      <div class="field"><span>Frame rate</span><select id="filmFps"><option value="24">24 fps</option><option value="30" selected>30 fps</option><option value="60">60 fps</option></select></div>
-      <div class="field"><span>Quality</span><select id="filmSamples"><option value="64">Draft</option><option value="256" selected>Good</option><option value="512">Best</option></select></div>
-      <div class="load"><button id="filmPreview">Preview</button><button class="primary" id="filmSave">Save MP4</button></div>
-      <p class="note" id="filmNote">Every frame is fully shaded; the video is encoded in your browser.</p>
-      </div>
-    </details>
     <details class="sec" data-sec="export" open>
       <summary>Export</summary>
       <div class="sec-body">
@@ -318,7 +326,8 @@
       <pre><code>from ipyspeck import Speck
 w = Speck.from_alphafold("Q8W3K0")
 w.apply_preset("cover")
-w.save_image("figure.png", width=3000)</code></pre>
+w.save_image("figure.png", width=3000)
+w.save_video("movie.mp4", "tour")</code></pre>
     </div>
     <div class="card">
       <h3>Streamlit · <a href="https://pypi.org/project/stspeck/">stspeck</a></h3>
@@ -328,6 +337,18 @@ stspeck.speck(**stspeck.fetch_pdb("4HHB"),
               surface=True, surfaceOpacity=0.3,
               preset="glossy", height=500)</code></pre>
     </div>
+  </div>
+
+  <h2 id="videos">Videos</h2>
+  <p>One line in Python, or the clapperboard button in the viewer: ready-made videos that find the ligand or the
+     trajectory, fully shaded without flicker. Step-by-step
+     <a href="https://github.com/denphi/speck/tree/master/jupyter/example/videos">notebooks</a> go from a first
+     video to your own storyboard.</p>
+  <div class="video-grid">
+    <figure><video src="videos/tour.mp4" autoplay muted loop playsinline></video><figcaption><code>"tour"</code> flies to the ligand</figcaption></figure>
+    <figure><video src="videos/focus.mp4" autoplay muted loop playsinline></video><figcaption><code>"focus"</code> pulls focus onto it</figcaption></figure>
+    <figure><video src="videos/reveal.mp4" autoplay muted loop playsinline></video><figcaption><code>"reveal"</code> cuts it open</figcaption></figure>
+    <figure><video src="videos/trajectory.mp4" autoplay muted loop playsinline></video><figcaption><code>"trajectory"</code> plays an NMR ensemble</figcaption></figure>
   </div>
 
   <h2 id="gallery">Gallery</h2>
@@ -341,7 +362,7 @@ stspeck.speck(**stspeck.fetch_pdb("4HHB"),
   based on <a href="https://github.com/wwwtyro/speck">Speck</a> by wwwtyro
 </footer>
 
-<script src="speck.ad6966b1e3.js"></script>
+<script src="speck.a4deeffc5b.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

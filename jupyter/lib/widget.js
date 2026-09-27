@@ -195,6 +195,8 @@ class SpeckView extends base_1.DOMWidgetView {
                 return;
             case 'stopFilm':
                 return viewer.stopFilm();
+            case 'flash':
+                return viewer.flash(message.text);
             case 'saveVideo':
                 this.saveVideo(message);
                 return;

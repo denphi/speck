@@ -123,11 +123,15 @@ def speck(data="", *, trajectory=None, height=400, preset=None, camera=None, ret
         width and/or height in pixels (the other side keeps the on-screen
         aspect) or a scale of the on-screen size. The largest side is
         limited to 4096 px.
-    film : list, optional
-        A film (shots from stspeck.shots) played in the viewer with a
-        player bar: play / pause, scrubber, and a button that renders the
-        film as an MP4 in the browser and downloads it (Chrome, Edge,
-        Safari 16.4+, Firefox 130+). film_loop repeats it.
+    film : str, dict or list, optional
+        A video played in the viewer with a player bar: play / pause, a
+        time slider, and "Save video", which renders it as an MP4 in the
+        browser and downloads it (Chrome, Edge, Safari 16.4+, Firefox 130+).
+        A ready-made video by name: "spin", "rock", "orbit", "tour",
+        "focus", "reveal", "trajectory" or "showcase" (stspeck.shots.RECIPES),
+        or shots.video("tour", seconds=10, title="Hemoglobin"), or your own
+        list of shots. film_loop repeats it. The viewer's video button
+        (clapperboard) offers the ready-made videos without code.
     video : dict, optional
         Options for that MP4: size ('720p', '1080p', '4k', 'square',
         'vertical', ... or [width, height]), fps, samples, background (a
@@ -160,7 +164,7 @@ def speck(data="", *, trajectory=None, height=400, preset=None, camera=None, ret
               "background": export_background, "filename": export_filename}
     film_args = None
     if film is not None:
-        film_args = {"shots": shots.film(film), "loop": bool(film_loop), "video": dict(video or {})}
+        film_args = {"film": shots.spec(film), "loop": bool(film_loop), "video": dict(video or {})}
     return _component(
         film=film_args, data=data, trajectory=bytes(trajectory) if trajectory else None,
         height=int(height), camera=camera or {}, return_state=bool(return_state),

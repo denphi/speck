@@ -36,7 +36,9 @@ function VideoWriter(options) {
     this.width = options.width;
     this.height = options.height;
     this.fps = options.fps || 30;
-    this.bitrate = options.bitrate || Math.min(80e6, Math.round(0.2 * this.width * this.height * this.fps));
+    // About 0.12 bits per pixel: rendered frames are smooth, so this is
+    // clean at 1080p (about 7.5 Mbit/s at 30 fps) without large files.
+    this.bitrate = options.bitrate || Math.min(60e6, Math.round(0.12 * this.width * this.height * this.fps));
     this.keyInterval = options.keyInterval || Math.round(2 * this.fps);
     this.mp4 = new Mp4Writer(this.width, this.height, this.fps);
     this.encoder = null;

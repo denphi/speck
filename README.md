@@ -86,8 +86,10 @@ image above to open that scene in the live demo.
 - **Coloring**: element, secondary structure, chain, rainbow, AlphaFold pLDDT, or any color; highlight
   and ghost any atom selection
 - **Output**: supersampled PNGs up to 4096 px, turntable and trajectory animations (GIF, MP4)
-- **Films**: camera moves (orbit, rock, fly to a selection, rack focus, cut open, crossfades, titles,
-  keyframes) previewed in the viewer and rendered to flicker-free MP4 in the browser, up to 4K
+- **Videos**: ready-made videos in one line (`w.save_video("movie.mp4", "tour")`) or from the viewer's
+  video button: spin, rock, orbit, ligand tour, focus pull, cut open, trajectories; or your own
+  storyboard of shots and keyframes. Flicker-free MP4 made in the browser, up to 4K
+  ([examples](jupyter/example/videos))
 - **Interface**: toolbar with styles, cartoon / surface / ligand toggles, views and snapshot; camera
   synced with Python
 

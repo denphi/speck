@@ -192,42 +192,53 @@ saved = w.camera                                       # ...later: w.camera = sa
 
 Exports render in the browser after the cell finishes; the file appears a moment later.
 
-### Films and videos
+### Videos
 
-A film is a list of shots, played one after another. Preview it in the widget
-(play, pause, scrub, download), then render it as a video:
+One line makes a video; the viewer shows its progress, and the file appears next to the notebook:
 
 ```python
-from ipyspeck import Speck, shots
-
 w = Speck.from_pdb_id("4HHB", cartoon=True)
-heme = {"resName": "HEM", "chain": "A"}
-film = [
-    shots.together(shots.orbit(6, degrees=180), shots.title("Hemoglobin", subtitle="PDB 4HHB")),
-    shots.cut_open(2, to=0.5),                 # slice in to show the inside
-    shots.fly_to(heme, 3),                     # dolly in and center the heme
-    shots.rack_focus(heme, 2),                 # depth of field pulls focus to it
-    shots.crossfade(surface=True, surfaceOpacity=0.35),
-    shots.home(3),                             # back to the opening view
-]
-w.preview(film)
-w.save_video("hemoglobin.mp4", film, size="1080p", fps=30,
-             background=["#1b2330", "#07090d"], vignette=0.3)
+w.preview("tour")                                          # watch it first, in the widget
+w.save_video("hemoglobin.mp4", "tour", title="Hemoglobin")
 ```
 
-Shots: `turntable`, `rock`, `orbit`, `zoom`, `fly_to`, `home`, `rack_focus`, `cut_open`,
-`fade` (any setting: `shots.fade(2, fog=0.5, ghost=0.6)`), `crossfade`, `trajectory`
-(smooth MD playback, interpolating between frames), `title`, `hold` and `together` (shots at
-the same time). Each takes an `ease` (`linear`, `smooth`, `in`, `out`, `sine`). For custom
-moves, pose the widget and record keys: `k1 = w.keyframe()`, rotate, `k2 = w.keyframe(fog=0.4)`,
-then `shots.keyframes([k1, k2], seconds=4)`.
+<table>
+<tr>
+<td align="center" width="25%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/videos/spin.gif" width="100%"/><br/><code>spin</code></td>
+<td align="center" width="25%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/videos/tour.gif" width="100%"/><br/><code>tour</code></td>
+<td align="center" width="25%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/videos/focus.gif" width="100%"/><br/><code>focus</code></td>
+<td align="center" width="25%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/videos/reveal.gif" width="100%"/><br/><code>reveal</code></td>
+</tr>
+</table>
+
+Ready-made videos: `spin`, `rock`, `orbit`, `tour` and `focus` (visit the largest ligand, or
+`target={"chain": "B"}`), `reveal` (cut open), `trajectory` (NMR ensembles, MD) and `showcase`.
+Options: `seconds=`, `title=` / `subtitle=`, `size=` (`"1080p"`, `"4k"`, `"square"`, `"vertical"`
+for phones), `quality="draft"` for a quick test, `background=["#1b2330", "#07090d"]`. Without
+code, the viewer's clapperboard button offers the same videos and a **Save video** button.
+
+Step-by-step notebooks, from a first video to your own storyboard: [example/videos](example/videos).
+
+For your own moves, put shots together:
+
+```python
+from ipyspeck import shots
+
+heme = {"resName": "HEM", "chain": "A"}
+film = [
+    shots.together(shots.orbit(6, degrees=180), shots.title("Hemoglobin")),
+    shots.crossfade(2, surface=True, surfaceOpacity=0.35),
+    shots.fly_to(heme, 3, face=True),
+    shots.rack_focus(heme, 2),
+    shots.home(3),
+]
+w.save_video("hemoglobin_story.mp4", film)
+```
 
 Every frame is fully shaded, with ambient occlusion fixed to the molecule, so videos do not
-flicker. MP4s are encoded in the browser (H.264 with WebCodecs: Chrome, Edge, Safari 16.4+,
-Firefox 130+); `.gif`, `.webm`, `.mov` or a directory of PNGs are written in Python. Sizes:
-`720p`, `1080p`, `1440p`, `4k`, `square`, `vertical` (9:16), `portrait` (4:5) or `(width, height)`;
-`motion_blur=4` averages sub-frames, `credit="..."` adds a corner line. Progress and a Cancel
-button show in the widget.
+flicker. MP4s are made in the browser (Chrome, Edge, Safari 16.4+, Firefox 130+); `.gif`,
+`.webm`, `.mov` or a folder of PNGs are written in Python (Pillow; imageio with ffmpeg for
+`.webm` / `.mov`).
 
 ### Structures from Python
 

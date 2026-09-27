@@ -1,6 +1,12 @@
-"""Shots for films: camera moves and changes over time.
+"""Videos: ready-made ones by name, or your own films built from shots.
 
-A film is a list of shots, played one after another::
+The quickest way is a ready-made video (see RECIPES)::
+
+    w = Speck.from_pdb_id("4HHB", cartoon=True)
+    w.preview("tour")                          # watch it in the widget
+    w.save_video("hemoglobin.mp4", "tour", title="Hemoglobin")
+
+Your own film is a list of shots, played one after another::
 
     from ipyspeck import Speck, shots      # or: import stspeck; from stspeck import shots
 
@@ -24,10 +30,38 @@ are dicts like highlight's ({"chain": "A"}, {"resName": "HEM"}, ...).
 
 # This file is identical in ipyspeck and stspeck.
 
-__all__ = ['hold', 'turntable', 'rock', 'orbit', 'zoom', 'fly_to', 'home', 'rack_focus', 'cut_open',
+__all__ = ['RECIPES', 'video', 'hold', 'turntable', 'rock', 'orbit', 'zoom', 'fly_to', 'home', 'rack_focus', 'cut_open',
            'fade', 'crossfade', 'trajectory', 'keyframes', 'title', 'together', 'loop', 'duration']
 
 EASES = ('linear', 'smooth', 'in', 'out', 'sine')
+
+# Ready-made videos: name -> (default seconds, what it shows). The ligand is
+# the structure's largest one unless you give a target.
+RECIPES = {
+    'spin': (8, 'One full turn; loops seamlessly'),
+    'rock': (6, 'A gentle swing back and forth; loops seamlessly'),
+    'orbit': (10, 'A full turn around a tilted axis, showing top and bottom'),
+    'tour': (12, 'Turns, flies in to the ligand (or target), looks around it and returns'),
+    'focus': (8, 'Moves close to the ligand (or target) and pulls the focus onto it'),
+    'reveal': (8, 'Slices the structure open while it turns, to show the inside'),
+    'trajectory': (8, 'Plays the trajectory frames smoothly while swinging gently'),
+    'showcase': (16, 'Half a turn, then the ligand up close (or the inside), and back'),
+}
+
+
+def video(name, seconds=None, target=None, title=None, subtitle=None):
+    """A ready-made video by name (see RECIPES), e.g. video('tour', seconds=10,
+    title='Hemoglobin'). target: a selection to visit instead of the largest
+    ligand, e.g. {'chain': 'B'} or {'resName': 'HEM', 'chain': 'A'}."""
+    if name not in RECIPES:
+        raise ValueError('unknown video %r; choose one of: %s' % (name, ', '.join(RECIPES)))
+    if seconds is not None and not seconds > 0:
+        raise ValueError('seconds must be a positive number')
+    spec = {'recipe': name}
+    for key, value in (('seconds', seconds), ('target', target), ('title', title), ('subtitle', subtitle)):
+        if value is not None:
+            spec[key] = value
+    return spec
 
 
 def _shot(type, **values):
@@ -69,10 +103,12 @@ def zoom(seconds=2, factor=2, ease=None):
     return _shot('zoom', seconds=seconds, factor=factor, ease=ease)
 
 
-def fly_to(selection, seconds=3, zoom=None, ease=None):
+def fly_to(selection, seconds=3, zoom=None, face=False, ease=None):
     """Center a selection and fit it in the picture, or magnify `zoom` times
-    instead of fitting."""
-    return _shot('fly_to', selection=selection, seconds=seconds, zoom=zoom, ease=ease)
+    instead of fitting. face=True also turns the structure so the selection
+    faces you (a ligand in a pocket is seen from outside, not through the
+    protein)."""
+    return _shot('fly_to', selection=selection, seconds=seconds, zoom=zoom, face=face or None, ease=ease)
 
 
 def home(seconds=2, ease=None):
@@ -193,3 +229,31 @@ def _flatten(shots):
 def film(shots):
     """A film (list of shot dicts) from shots or lists of shots."""
     return list(_flatten(shots))
+
+
+def spec(film, seconds=None, target=None, title=None, subtitle=None):
+    """What the viewer plays: a ready-made video's name, video(...), or a list
+    of shots, with an optional title over the first seconds."""
+    if isinstance(film, str):
+        return video(film, seconds=seconds, target=target, title=title, subtitle=subtitle)
+    if isinstance(film, dict) and 'recipe' in film:
+        out = video(film['recipe'], film.get('seconds', seconds), film.get('target', target),
+                    film.get('title', title), film.get('subtitle', subtitle))
+        return out
+    if seconds is not None or target is not None:
+        raise ValueError('seconds and target apply to ready-made videos (a name such as "tour")')
+    out = {'shots': list(_flatten(film))}
+    if not out['shots']:
+        raise ValueError('the film has no shots')
+    if title is not None:
+        out['title'] = title
+    if subtitle is not None:
+        out['subtitle'] = subtitle
+    return out
+
+
+def spec_seconds(s):
+    """Seconds of a spec() (ready-made videos: their default or `seconds`)."""
+    if 'recipe' in s:
+        return s.get('seconds') or RECIPES[s['recipe']][0]
+    return duration(s['shots'])
