@@ -2,4 +2,8 @@
 import { SpeckViewer, VIEW_DEFAULTS, VIEW_TRAITS } from '../../core/lib/viewer';
 import '../../core/css/speck.css';
 
-(window as any).Speck = { SpeckViewer, VIEW_DEFAULTS, VIEW_TRAITS };
+declare function require(module: string): any;
+// Element table, for resetting custom element colors.
+const elements = require('../../core/lib/elements.js');
+
+(window as any).Speck = { SpeckViewer, VIEW_DEFAULTS, VIEW_TRAITS, elements };

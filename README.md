@@ -1,84 +1,139 @@
-# Speck
+# ipyspeck & stspeck
 
-Speck is a molecule renderer with the goal of producing figures that are as attractive as they are practical. Express your molecule clearly _and_ with style.
+Publication-quality molecular graphics for **Jupyter** and **Streamlit**: ambient occlusion,
+protein and nucleic-acid cartoons, molecular surfaces (optionally glass-like), glossy and
+metallic materials, shadows, fog, macro depth of field and high-resolution export.
+Built on [Speck](https://github.com/wwwtyro/speck) by wwwtyro.
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/wwwtyro/speck/gh-pages/static/screenshots/demo-2.png">
-</p>
+![ipyspeck 0.8](https://raw.githubusercontent.com/denphi/speck/master/media/banner.jpg)
 
-## Python packages
-
-This repository also hosts two Python packages built on the same renderer:
-
-| Folder | Package | Use it in |
-|---|---|---|
-| [`jupyter/`](jupyter/) | **ipyspeck** | Jupyter Notebook / JupyterLab (ipywidgets 7 and 8) |
-| [`streamlit/`](streamlit/) | **stspeck** | Streamlit apps |
-| [`core/`](core/) | — | Shared renderer and viewer used by both |
-| [`site/`](site/) | — | Live demo, built into `docs/` for GitHub Pages |
-
-Both add cartoons, molecular surfaces (optionally transparent), metallic and glossy
-materials, shadows, fog, highlighting, trajectories, unit cells and high-resolution
-export on top of the ambient-occlusion renderer described below.
+[![ipyspeck on PyPI](https://img.shields.io/pypi/v/ipyspeck?label=ipyspeck)](https://pypi.org/project/ipyspeck/)
+[![stspeck on PyPI](https://img.shields.io/pypi/v/stspeck?label=stspeck)](https://pypi.org/project/stspeck/)
+[![Python](https://img.shields.io/pypi/pyversions/ipyspeck)](https://pypi.org/project/ipyspeck/)
+[![Live demo](https://img.shields.io/badge/demo-denphi.github.io%2Fspeck-2f6fe0)](https://denphi.github.io/speck/)
 
 ## Try it live
 
-Try the new viewer live in your browser, with cartoons, surfaces, materials and depth of field:
-https://denphi.github.io/speck/ (load any PDB ID or AlphaFold model).
+**[denphi.github.io/speck](https://denphi.github.io/speck/)** runs the same viewer in your browser. Load
+any PDB ID or AlphaFold model, change the look, export a PNG, or click a gallery image to open that scene.
+Links can open a structure or a scene directly:
+[`?q=4HHB`](https://denphi.github.io/speck/?q=4HHB),
+[`?q=Q8W3K0`](https://denphi.github.io/speck/?q=Q8W3K0) (AlphaFold),
+[`?example=gold_macro`](https://denphi.github.io/speck/?example=gold_macro).
 
-The original Speck demo by wwwtyro is at http://wwwtyro.github.io/speck/.
+## Quick start
+
+**Jupyter** (Notebook 6, JupyterLab 3 and 4; ipywidgets 7 and 8)
+
+```bash
+pip install ipyspeck
+```
+
+```python
+from ipyspeck import Speck
+
+w = Speck.from_pdb_id("4HHB", cartoonColor="chain", surface=True, surfaceOpacity=0.3,
+                      highlight={"resName": "HEM"})
+w.apply_preset("cover")              # default, matte, glossy, toon, cover, metal, glass
+w.save_image("hemoglobin.png", width=3000)
+```
+
+**Streamlit**
+
+```bash
+pip install stspeck
+```
+
+```python
+import stspeck
+
+stspeck.speck(**stspeck.fetch_alphafold("Q8W3K0"), preset="cover", height=500)
+```
+
+Structures load from files, RCSB, AlphaFold DB, ASE, RDKit or pymatgen. See the package
+READMEs for every setting: [ipyspeck](jupyter/README.md) · [stspeck](streamlit/README.md).
+
+## Gallery
+
+<table>
+<tr>
+<td width="33%"><a href="https://denphi.github.io/speck/?example=gold_macro"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/gold_macro.jpg" width="100%"/></a></td>
+<td width="33%"><a href="https://denphi.github.io/speck/?example=hemoglobin_glass"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/hemoglobin_glass.jpg" width="100%"/></a></td>
+<td width="33%"><a href="https://denphi.github.io/speck/?example=alphafold"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/alphafold.jpg" width="100%"/></a></td>
+</tr>
+<tr>
+<td width="33%"><a href="https://denphi.github.io/speck/?example=heme_macro"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/heme_macro.jpg" width="100%"/></a></td>
+<td width="33%"><a href="https://denphi.github.io/speck/?example=crispr_cas9"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/crispr_cas9.jpg" width="100%"/></a></td>
+<td width="33%"><a href="https://denphi.github.io/speck/?example=perovskite"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/perovskite.jpg" width="100%"/></a></td>
+</tr>
+</table>
+
+All 32 images: [ipyspeck gallery](jupyter/README.md#gallery). Each one has a notebook that reproduces
+it exactly, with the same settings and camera: [jupyter/example/gallery](jupyter/example/gallery/). Click an
+image above to open that scene in the live demo.
 
 ## Features
 
-#### Ambient Occlusion
+- **Representations**: atoms and bonds (ball and stick, space filling, licorice), cartoons with
+  secondary structure from the file or computed from backbone H-bonds, solvent-excluded surfaces,
+  unit cells, trajectories
+- **Lighting**: ambient occlusion, shadows from a key light, depth fog, rim light, outlines,
+  highlight roll-off
+- **Materials**: specular, gloss and metallic (optionally only on metal atoms)
+- **Depth of field**: a macro-lens model (blur grows with depth and zoom); `dofFocus` keeps a selection sharp
+- **Coloring**: element, secondary structure, chain, rainbow, AlphaFold pLDDT, or any color; highlight
+  and ghost any atom selection
+- **Output**: supersampled PNGs up to 4096 px, turntable and trajectory animations (GIF, MP4)
+- **Interface**: toolbar with styles, cartoon / surface / ligand toggles, views and snapshot; camera
+  synced with Python
 
-Ambient occlusion provides much more information about molecule structure than simple direct lighting. It's incredibly useful for large and small molecule viewing alike. Easily Speck's most important feature.
+## Repository layout
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/wwwtyro/speck/gh-pages/static/screenshots/demo-9.png">
-</p>
+| Path | What it is |
+|---|---|
+| [`core/`](core/) | Shared renderer (WebGL) and `SpeckViewer`, used by everything below. No npm dependencies. |
+| [`jupyter/`](jupyter/) | **ipyspeck**: Python package and JupyterLab / Notebook extension ([README](jupyter/README.md), [changelog](jupyter/CHANGELOG.md)) |
+| [`jupyter/example/`](jupyter/example/) | Notebooks: `showcase.ipynb`, `alphafold.ipynb`, and one notebook per gallery image in `gallery/` |
+| [`streamlit/`](streamlit/) | **stspeck**: Streamlit component ([README](streamlit/README.md), [changelog](streamlit/CHANGELOG.md)) |
+| [`site/`](site/) | Source of the live demo; builds into [`docs/`](docs/), served by GitHub Pages |
+| [`media/`](media/) | Banner and gallery images used by the READMEs and the demo |
+| `src/`, `static/`, `index.html`, `react.html`, `build/`, `ipyspeck.ipynb` | The original Speck web app and early ipyspeck examples, kept for reference. The current React example is [`docs/react.html`](https://denphi.github.io/speck/react.html). |
 
-#### Pixel-perfect atoms and bonds
+## Compatibility
 
-Speck renders atoms and bonds not with polygons, but with imposters. This means you can zoom in as close as you like and surfaces remain smooth, not faceted.
+| | Supported and tested |
+|---|---|
+| Python | 3.8, 3.9, 3.10 (3.8+) |
+| Jupyter | Classic Notebook 6, JupyterLab 3 and 4, with ipywidgets 7 or 8 |
+| Streamlit | 1.20+ (tested 1.40, 1.50, 1.64) |
+| Browsers | WebGL 1: Chrome, Firefox, Safari, Edge |
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/wwwtyro/speck/gh-pages/static/screenshots/demo-0.png">
-</p>
+## Development
 
-#### Depth-aware outlines
+Both packages build `core/` first, so a change there reaches Jupyter, Streamlit and the demo.
 
-Speck can render atom outlines that are depth-aware. Instead of making your molecule appear to be a collection of flat circles, depth-aware outlines provide cues to the viewer that convey information about the molecular structure.
+```bash
+# ipyspeck
+cd jupyter && npm install && npm run build   # core, TypeScript, notebook and lab extensions
+npm test                                     # model unit tests
+pip install -e .
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/wwwtyro/speck/gh-pages/static/screenshots/demo-5.png">
-</p>
+# stspeck
+cd streamlit/frontend && npm install && npm run build
+cd .. && pip install -e .
 
-#### Depth of field
+# demo site (writes docs/)
+cd site && npm install && npm run build
+```
 
-Render a more attractive figure while simultaneously drawing your viewer's eye to a region you want to highlight.
+Releases: bump the version in `jupyter/pyproject.toml`, `jupyter/package.json`,
+`jupyter/ipyspeck/_version.py` (and the `^x.y.z` module version in `speck.py`),
+`streamlit/pyproject.toml`, `streamlit/stspeck/__init__.py`; run `npm run build:prod` in
+`jupyter/`; build with `uv build` (or `python -m build`) in each package; upload with `twine`.
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/wwwtyro/speck/gh-pages/static/screenshots/demo-1.png">
-</p>
+## Credits and license
 
-#### Mix and match rendering options
-
-Speck goes to great lengths to decouple rendering options, so that you have the flexibility to present your data in the most clear and attractive way.
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/wwwtyro/speck/gh-pages/static/screenshots/demo-3.png">
-  <img src="https://raw.githubusercontent.com/wwwtyro/speck/gh-pages/static/screenshots/demo-6.png">
-  <img src="https://raw.githubusercontent.com/wwwtyro/speck/gh-pages/static/screenshots/demo-4.png">
-  <img src="https://raw.githubusercontent.com/wwwtyro/speck/gh-pages/static/screenshots/demo-7.png">
-  <img src="https://raw.githubusercontent.com/wwwtyro/speck/gh-pages/static/screenshots/demo-8.png">
-</p>
-
-#### Compilation
-
-* npm install --save webpack
-* npm install --save jquery@2.2.4
-* npm install --save keyboardjs
-* npm install --save lodash
-* npm install --save lz-string
-* npx webpack
+- ipyspeck, stspeck and the rest of this repository are by [Daniel Mejia (denphi)](https://github.com/denphi),
+  under the [BSD 3-Clause License](LICENSE).
+- They are based on [Speck](https://github.com/wwwtyro/speck) by wwwtyro, which is in the public domain
+  ([`LICENSE-SPECK`](LICENSE-SPECK)). The original demo is at http://wwwtyro.github.io/speck/.

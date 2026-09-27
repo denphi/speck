@@ -13,3 +13,6 @@ styles the viewer.
 
 Both packages build this folder first (`tsc -p ../core`), which writes `lib/`; nothing
 here has npm dependencies.
+
+The renderer derives from [Speck](https://github.com/wwwtyro/speck) by wwwtyro (public domain,
+`../LICENSE-SPECK`); this repository's changes are under the BSD 3-Clause License (`../LICENSE`).

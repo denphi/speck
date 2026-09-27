@@ -38,20 +38,20 @@ Run the demo with `streamlit run example/app.py`.
 
 ## Gallery
 
-Rendered with the ipyspeck / stspeck renderer (see `example/showcase.ipynb` for the settings behind these looks).
+Rendered with the ipyspeck / stspeck renderer (see `example/showcase.ipynb` for the settings behind these looks). Click an image to open that scene in the [live demo](https://denphi.github.io/speck/).
 
 ### Macro photography (depth of field)
 
 <table>
 <tr>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/gold_macro.jpg" width="100%"/><br/><sub>Gold nanoparticle, 923 atoms</sub></td>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/copper_macro.jpg" width="100%"/><br/><sub>Copper surface</sub></td>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/heme_macro.jpg" width="100%"/><br/><sub>Heme in hemoglobin (4HHB)</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=gold_macro"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/gold_macro.jpg" width="100%"/></a><br/><sub>Gold nanoparticle, 923 atoms</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=copper_macro"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/copper_macro.jpg" width="100%"/></a><br/><sub>Copper surface</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=heme_macro"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/heme_macro.jpg" width="100%"/></a><br/><sub>Heme in hemoglobin (4HHB)</sub></td>
 </tr>
 <tr>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/imatinib_macro.jpg" width="100%"/><br/><sub>Imatinib in ABL kinase (1IEP)</sub></td>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/dna_macro.jpg" width="100%"/><br/><sub>Nucleosome DNA (1KX5)</sub></td>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/alphafold_macro.jpg" width="100%"/><br/><sub>AlphaFold RPP7 repeat domain</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=imatinib_macro"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/imatinib_macro.jpg" width="100%"/></a><br/><sub>Imatinib in ABL kinase (1IEP)</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=dna_macro"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/dna_macro.jpg" width="100%"/></a><br/><sub>Nucleosome DNA (1KX5)</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=alphafold_macro"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/alphafold_macro.jpg" width="100%"/></a><br/><sub>AlphaFold RPP7 repeat domain</sub></td>
 </tr>
 </table>
 
@@ -59,27 +59,27 @@ Rendered with the ipyspeck / stspeck renderer (see `example/showcase.ipynb` for 
 
 <table>
 <tr>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/alphafold.jpg" width="100%"/><br/><sub>AlphaFold RPP7, by pLDDT</sub></td>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/hemoglobin_glass.jpg" width="100%"/><br/><sub>Hemoglobin, glass surface (4HHB)</sub></td>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/spike.jpg" width="100%"/><br/><sub>SARS-CoV-2 spike (6VXX)</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=alphafold"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/alphafold.jpg" width="100%"/></a><br/><sub>AlphaFold RPP7, by pLDDT</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=hemoglobin_glass"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/hemoglobin_glass.jpg" width="100%"/></a><br/><sub>Hemoglobin, glass surface (4HHB)</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=spike"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/spike.jpg" width="100%"/></a><br/><sub>SARS-CoV-2 spike (6VXX)</sub></td>
 </tr>
 <tr>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/antibody.jpg" width="100%"/><br/><sub>IgG antibody (1IGT)</sub></td>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/gfp.jpg" width="100%"/><br/><sub>Green fluorescent protein (1EMA)</sub></td>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/groel.jpg" width="100%"/><br/><sub>GroEL–GroES chaperonin (1AON)</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=antibody"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/antibody.jpg" width="100%"/></a><br/><sub>IgG antibody (1IGT)</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=gfp"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/gfp.jpg" width="100%"/></a><br/><sub>Green fluorescent protein (1EMA)</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=groel"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/groel.jpg" width="100%"/></a><br/><sub>GroEL–GroES chaperonin (1AON)</sub></td>
 </tr>
 <tr>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/potassium_channel.jpg" width="100%"/><br/><sub>KcsA K⁺ channel (1BL8)</sub></td>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/crispr_cas9.jpg" width="100%"/><br/><sub>CRISPR-Cas9 with guide RNA (4OO8)</sub></td>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/hiv_protease.jpg" width="100%"/><br/><sub>HIV protease + saquinavir (1HXB)</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=potassium_channel"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/potassium_channel.jpg" width="100%"/></a><br/><sub>KcsA K⁺ channel (1BL8)</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=crispr_cas9"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/crispr_cas9.jpg" width="100%"/></a><br/><sub>CRISPR-Cas9 with guide RNA (4OO8)</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=hiv_protease"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/hiv_protease.jpg" width="100%"/></a><br/><sub>HIV protease + saquinavir (1HXB)</sub></td>
 </tr>
 <tr>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/streptavidin_biotin.jpg" width="100%"/><br/><sub>Streptavidin–biotin (1STP)</sub></td>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/myoglobin.jpg" width="100%"/><br/><sub>Myoglobin, toon style (1MBN)</sub></td>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/collagen.jpg" width="100%"/><br/><sub>Collagen triple helix (1BKV)</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=streptavidin_biotin"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/streptavidin_biotin.jpg" width="100%"/></a><br/><sub>Streptavidin–biotin (1STP)</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=myoglobin"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/myoglobin.jpg" width="100%"/></a><br/><sub>Myoglobin, toon style (1MBN)</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=collagen"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/collagen.jpg" width="100%"/></a><br/><sub>Collagen triple helix (1BKV)</sub></td>
 </tr>
 <tr>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/ubiquitin_surface.jpg" width="100%"/><br/><sub>Ubiquitin surface (1UBQ)</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=ubiquitin_surface"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/ubiquitin_surface.jpg" width="100%"/></a><br/><sub>Ubiquitin surface (1UBQ)</sub></td>
 </tr>
 </table>
 
@@ -87,9 +87,9 @@ Rendered with the ipyspeck / stspeck renderer (see `example/showcase.ipynb` for 
 
 <table>
 <tr>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/nucleosome.jpg" width="100%"/><br/><sub>Nucleosome (1KX5)</sub></td>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/trna.jpg" width="100%"/><br/><sub>Transfer RNA (1EHZ)</sub></td>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/g_quadruplex.jpg" width="100%"/><br/><sub>G-quadruplex with K⁺ (1KF1)</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=nucleosome"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/nucleosome.jpg" width="100%"/></a><br/><sub>Nucleosome (1KX5)</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=trna"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/trna.jpg" width="100%"/></a><br/><sub>Transfer RNA (1EHZ)</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=g_quadruplex"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/g_quadruplex.jpg" width="100%"/></a><br/><sub>G-quadruplex with K⁺ (1KF1)</sub></td>
 </tr>
 </table>
 
@@ -97,22 +97,22 @@ Rendered with the ipyspeck / stspeck renderer (see `example/showcase.ipynb` for 
 
 <table>
 <tr>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/gold_cluster.jpg" width="100%"/><br/><sub>Gold–thiolate cluster</sub></td>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/copper_crystal.jpg" width="100%"/><br/><sub>Copper crystal and unit cell</sub></td>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/perovskite.jpg" width="100%"/><br/><sub>SrTiO₃ perovskite</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=gold_cluster"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/gold_cluster.jpg" width="100%"/></a><br/><sub>Gold–thiolate cluster</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=copper_crystal"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/copper_crystal.jpg" width="100%"/></a><br/><sub>Copper crystal and unit cell</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=perovskite"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/perovskite.jpg" width="100%"/></a><br/><sub>SrTiO₃ perovskite</sub></td>
 </tr>
 <tr>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/mos2.jpg" width="100%"/><br/><sub>MoS₂ monolayer</sub></td>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/graphene.jpg" width="100%"/><br/><sub>Graphene</sub></td>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/nanotube.jpg" width="100%"/><br/><sub>Carbon nanotube</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=mos2"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/mos2.jpg" width="100%"/></a><br/><sub>MoS₂ monolayer</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=graphene"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/graphene.jpg" width="100%"/></a><br/><sub>Graphene</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=nanotube"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/nanotube.jpg" width="100%"/></a><br/><sub>Carbon nanotube</sub></td>
 </tr>
 <tr>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/buckyball.jpg" width="100%"/><br/><sub>C₆₀ buckminsterfullerene</sub></td>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/taxol.jpg" width="100%"/><br/><sub>Taxol (paclitaxel)</sub></td>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/chlorophyll.jpg" width="100%"/><br/><sub>Chlorophyll a</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=buckyball"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/buckyball.jpg" width="100%"/></a><br/><sub>C₆₀ buckminsterfullerene</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=taxol"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/taxol.jpg" width="100%"/></a><br/><sub>Taxol (paclitaxel)</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=chlorophyll"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/chlorophyll.jpg" width="100%"/></a><br/><sub>Chlorophyll a</sub></td>
 </tr>
 <tr>
-<td align="center" width="33%"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/caffeine.jpg" width="100%"/><br/><sub>Caffeine</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=caffeine"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/caffeine.jpg" width="100%"/></a><br/><sub>Caffeine</sub></td>
 </tr>
 </table>
 
@@ -123,3 +123,8 @@ For Jupyter, use [ipyspeck](https://pypi.org/project/ipyspeck/), which has the s
 The frontend (`frontend/`) bundles the viewer shared with ipyspeck (`../core`).
 Build it with `cd frontend && npm install && npm run build`, which also compiles
 `../core`. `pip install .` runs the same build when `stspeck/static` is missing.
+
+## License
+
+BSD-3-Clause (see `LICENSE`). stspeck is based on [Speck](https://github.com/wwwtyro/speck) by wwwtyro,
+which is in the public domain (see `LICENSE-SPECK`).

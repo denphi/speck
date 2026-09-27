@@ -11,11 +11,20 @@ class WritePages {
     compiler.hooks.afterEmit.tap('WritePages', (compilation) => {
       const bundle = Object.keys(compilation.assets).find((name) => /^speck\..*\.js$/.test(name));
       const pub = path.resolve(__dirname, 'public');
-      for (const file of fs.readdirSync(pub)) {
-        let text = fs.readFileSync(path.join(pub, file), 'utf8');
-        if (file.endsWith('.html')) text = text.replace(/src="speck\.js"/g, `src="${bundle}"`);
-        fs.writeFileSync(path.join(outDir, file), text);
-      }
+      const copy = (from, to) => {
+        for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
+          const src = path.join(from, entry.name), dst = path.join(to, entry.name);
+          if (entry.isDirectory()) {
+            fs.mkdirSync(dst, { recursive: true });
+            copy(src, dst);
+          } else if (entry.name.endsWith('.html')) {
+            fs.writeFileSync(dst, fs.readFileSync(src, 'utf8').replace(/src="speck\.js"/g, `src="${bundle}"`));
+          } else {
+            fs.copyFileSync(src, dst);
+          }
+        }
+      };
+      copy(pub, outDir);
       // Serve files as-is (no Jekyll processing on GitHub Pages).
       fs.writeFileSync(path.join(outDir, '.nojekyll'), '');
     });

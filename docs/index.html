@@ -22,7 +22,7 @@
   header h1 span { color: var(--muted); font-weight: 400; font-size: 15px; margin-left: 8px; }
   header nav { display: flex; gap: 18px; font-size: 14px; }
   .app { display: grid; grid-template-columns: minmax(0, 1fr) 320px; height: calc(100vh - 67px); min-height: 560px; }
-  .stage { position: relative; min-width: 0; }
+  .stage { position: relative; min-width: 0; transition: background 0.3s; }
   #viewer { position: absolute; inset: 0; width: 100%; height: 100%; }
   .loading { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); color: var(--muted);
     background: rgba(255,255,255,0.85); padding: 8px 14px; border-radius: 8px; display: none; }
@@ -57,7 +57,9 @@
   code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   .gallery h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 22px 0 10px; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
-  .grid figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .grid figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+    cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; }
+  .grid figure:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(28, 33, 48, 0.12); }
   .grid img { display: block; width: 100%; aspect-ratio: 4 / 5; object-fit: cover; background: #e9ecf1; }
   .grid figcaption { font-size: 12px; color: var(--muted); padding: 7px 10px; }
   footer { text-align: center; color: var(--muted); font-size: 12.5px; padding: 26px; border-top: 1px solid var(--line); }
@@ -174,7 +176,8 @@ stspeck.speck(**stspeck.fetch_pdb("4HHB"),
   </div>
 
   <h2 id="gallery">Gallery</h2>
-  <p>Rendered with ipyspeck, several with the macro depth of field.</p>
+  <p>Rendered with ipyspeck, several with the macro depth of field. Click an image to load that scene in the
+     viewer, or open its <a href="https://github.com/denphi/speck/tree/master/jupyter/example/gallery">notebook</a>.</p>
   <div class="gallery" id="galleryGroups"></div>
 </section>
 
@@ -183,7 +186,7 @@ stspeck.speck(**stspeck.fetch_pdb("4HHB"),
   based on <a href="https://github.com/wwwtyro/speck">Speck</a> by wwwtyro
 </footer>
 
-<script src="speck.fe0ac272f5.js"></script>
+<script src="speck.3fa75700fa.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -10,7 +10,7 @@ build-backend = "hatchling.build"
 name = "ipyspeck"
 description = "Speck Jupyter Widget"
 readme = "README.md"
-license = { file = "LICENSE" }
+license = { text = "BSD-3-Clause" }
 requires-python = ">=3.8"
 authors = [
     { name = "Daniel Mejia (Denphi)", email = "denphi@denphi.com" },

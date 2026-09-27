@@ -36,7 +36,15 @@
     {label: "Caffeine", preset: "toon", data: "24\nCaffeine\nH      -3.3804130    -1.1272367     0.5733036\nN       0.9668296    -1.0737425    -0.8198227\nC       0.0567293     0.8527195     0.3923156\nN      -1.3751742    -1.0212243    -0.0570552\nC      -1.2615018     0.2590713     0.5234135\nC      -0.3068337    -1.6836331    -0.7169344\nC       1.1394235     0.1874122    -0.2700900\nN       0.5602627     2.0839095     0.8251589\nO      -0.4926797    -2.8180554    -1.2094732\nC      -2.6328073    -1.7303959    -0.0060953\nO      -2.2301338     0.7988624     1.0899730\nH       2.5496990     2.9734977     0.6229590\nC       2.0527432    -1.7360887    -1.4931279\nH      -2.4807715    -2.7269528     0.4882631\nH      -3.0089039    -1.9025254    -1.0498023\nH       2.9176101    -1.8481516    -0.7857866\nH       2.3787863    -1.1211917    -2.3743655\nH       1.7189877    -2.7489920    -1.8439205\nC      -0.1518450     3.0970046     1.5348347\nC       1.8934096     2.1181245     0.4193193\nN       2.2861252     0.9968439    -0.2440298\nH      -0.1687028     4.0436553     0.9301094\nH       0.3535322     3.2979060     2.5177747\nH      -1.2074498     2.7537592     1.7203047\n", settings: {}}
   ];
 
-  var GROUPS = [{"title": "Macro photography (depth of field)", "items": [{"name": "gold_macro", "caption": "Gold nanoparticle, 923 atoms"}, {"name": "copper_macro", "caption": "Copper surface"}, {"name": "heme_macro", "caption": "Heme in hemoglobin (4HHB)"}, {"name": "imatinib_macro", "caption": "Imatinib in ABL kinase (1IEP)"}, {"name": "dna_macro", "caption": "Nucleosome DNA (1KX5)"}, {"name": "alphafold_macro", "caption": "AlphaFold RPP7 repeat domain"}]}, {"title": "Proteins and complexes", "items": [{"name": "alphafold", "caption": "AlphaFold RPP7, by pLDDT"}, {"name": "hemoglobin_glass", "caption": "Hemoglobin, glass surface (4HHB)"}, {"name": "spike", "caption": "SARS-CoV-2 spike (6VXX)"}, {"name": "antibody", "caption": "IgG antibody (1IGT)"}, {"name": "gfp", "caption": "Green fluorescent protein (1EMA)"}, {"name": "groel", "caption": "GroEL–GroES chaperonin (1AON)"}, {"name": "potassium_channel", "caption": "KcsA K⁺ channel (1BL8)"}, {"name": "crispr_cas9", "caption": "CRISPR-Cas9 with guide RNA (4OO8)"}, {"name": "hiv_protease", "caption": "HIV protease + saquinavir (1HXB)"}, {"name": "streptavidin_biotin", "caption": "Streptavidin–biotin (1STP)"}, {"name": "myoglobin", "caption": "Myoglobin, toon style (1MBN)"}, {"name": "collagen", "caption": "Collagen triple helix (1BKV)"}, {"name": "ubiquitin_surface", "caption": "Ubiquitin surface (1UBQ)"}]}, {"title": "Nucleic acids", "items": [{"name": "nucleosome", "caption": "Nucleosome (1KX5)"}, {"name": "trna", "caption": "Transfer RNA (1EHZ)"}, {"name": "g_quadruplex", "caption": "G-quadruplex with K⁺ (1KF1)"}]}, {"title": "Chemistry and materials", "items": [{"name": "gold_cluster", "caption": "Gold–thiolate cluster"}, {"name": "copper_crystal", "caption": "Copper crystal and unit cell"}, {"name": "perovskite", "caption": "SrTiO₃ perovskite"}, {"name": "mos2", "caption": "MoS₂ monolayer"}, {"name": "graphene", "caption": "Graphene"}, {"name": "nanotube", "caption": "Carbon nanotube"}, {"name": "buckyball", "caption": "C₆₀ buckminsterfullerene"}, {"name": "taxol", "caption": "Taxol (paclitaxel)"}, {"name": "chlorophyll", "caption": "Chlorophyll a"}, {"name": "caffeine", "caption": "Caffeine"}]}];
+  var RCSB = "https://files.rcsb.org/download/";
+  var SCENES = {};
+
+  // Default element colors, to undo a scene's custom colors.
+  var DEFAULT_COLORS = {};
+  Object.keys(S.elements).forEach(function (k) {
+    if (isNaN(k)) DEFAULT_COLORS[k] = S.elements[k].color.slice();
+  });
+  var customColors = false;
 
   // --- viewer state (the "host" of SpeckViewer) ------------------------------
   function freshState() {
@@ -45,6 +53,7 @@
     return s;
   }
   var state = freshState();
+  var stage = document.querySelector(".stage");
   var controls = [].slice.call(document.querySelectorAll("[data-trait]"));
 
   var viewer = new S.SpeckViewer(document.getElementById("viewer"), {
@@ -104,6 +113,9 @@
 
   // --- loading ------------------------------------------------------------
   var info = document.getElementById("info");
+  // Only the most recently started load is shown (a slow download must not
+  // replace a structure picked after it).
+  var loadTicket = 0;
   var loadingEl = document.getElementById("loading");
 
   function fetchText(url) {
@@ -125,7 +137,16 @@
       .then(function (t) { return {text: t, source: "AlphaFold " + query.toUpperCase()}; });
   }
 
+  function resetScene() {
+    if (customColors) {
+      viewer.setAtomsColor(DEFAULT_COLORS);
+      customColors = false;
+    }
+    stage.style.background = "";
+  }
+
   function show(text, source, preset, settings) {
+    resetScene();
     var next = freshState();
     Object.assign(next, PRESETS["default"], PRESETS[preset || "default"], settings || {});
     next.data = text;
@@ -141,17 +162,20 @@
 
   function load(sample, button) {
     [].forEach.call(document.querySelectorAll("#samples button"), function (b) { b.classList.toggle("active", b === button); });
+    if (sample.query) history.replaceState(null, "", "?q=" + encodeURIComponent(sample.query.trim()));
     loadingEl.style.display = "block";
+    var ticket = ++loadTicket;
     var ready = sample.data ? Promise.resolve({text: sample.data, source: sample.label}) : fetchStructure(sample.query);
     return ready.then(function (r) {
+      if (ticket !== loadTicket) return;
       var isPDB = /^(ATOM  |HETATM)/m.test(r.text);
       var settings = Object.assign({}, sample.settings || {});
       if (isPDB && !("cartoon" in settings) && !("surface" in settings)) settings.cartoon = true;
       if (/^AlphaFold/.test(r.source) && !settings.cartoonColor) settings.cartoonColor = "plddt";
       show(r.text, r.source, sample.preset, settings);
     }).catch(function (e) {
-      info.textContent = "Could not load: " + e.message;
-    }).then(function () { loadingEl.style.display = "none"; });
+      if (ticket === loadTicket) info.textContent = "Could not load: " + e.message;
+    }).then(function () { if (ticket === loadTicket) loadingEl.style.display = "none"; });
   }
 
   var samplesBox = document.getElementById("samples");
@@ -169,13 +193,14 @@
   query.addEventListener("keydown", function (e) { if (e.key === "Enter") loadQuery(); });
 
   // Drop a PDB / XYZ file on the viewer.
-  var stage = document.querySelector(".stage");
   stage.addEventListener("dragover", function (e) { e.preventDefault(); });
   stage.addEventListener("drop", function (e) {
     e.preventDefault();
     var f = e.dataTransfer.files[0];
     if (!f) return;
+    var ticket = ++loadTicket;
     f.text().then(function (t) {
+      if (ticket !== loadTicket) return;
       var isPDB = /^(ATOM  |HETATM)/m.test(t);
       show(t, f.name, "glossy", isPDB ? {cartoon: true} : {});
     });
@@ -199,31 +224,110 @@
       .then(function () { button.disabled = false; });
   });
 
-  // --- gallery ------------------------------------------------------------
+  // --- gallery scenes ------------------------------------------------------
+  // A scene's camera was recorded for an image of scene.size; the viewer has
+  // another aspect, so fit the image's visible area inside the viewer. (The
+  // canvas shows the bottom-left part of a square frame of side max(w, h).)
+  function fitCamera(camera, size) {
+    var el = document.getElementById("viewer");
+    var cw = el.clientWidth, ch = el.clientHeight, iw = size[0], ih = size[1];
+    var mi = Math.max(iw, ih), mc = Math.max(cw, ch), wi = 1 / camera.zoom;
+    var width = wi * iw / mi, height = wi * ih / mi;
+    var cx = camera.translation[0] - wi / 2 + width / 2;
+    var cy = camera.translation[1] - wi / 2 + height / 2;
+    var wc = Math.max(width * mc / cw, height * mc / ch);
+    return {rotation: camera.rotation, zoom: 1 / wc,
+            translation: [cx - wc * cw / mc / 2 + wc / 2, cy - wc * ch / mc / 2 + wc / 2]};
+  }
+
+  function sceneText(source) {
+    if (source.alphafold) return fetchStructure(source.alphafold).then(function (r) { return r.text; });
+    if (source.pdb) {
+      return fetchText(RCSB + source.pdb + ".pdb").then(function (t) {
+        if (!source.chains) return t;
+        return t.split("\n").filter(function (l) {
+          return /^(ATOM  |HETATM)/.test(l) && source.chains.indexOf(l.charAt(21)) >= 0;
+        }).join("\n") + "\nEND\n";
+      });
+    }
+    return fetchText(source.file);
+  }
+
+  function loadScene(name) {
+    var sc = SCENES[name];
+    if (!sc) return;
+    [].forEach.call(document.querySelectorAll("#samples button"), function (b) { b.classList.remove("active"); });
+    history.replaceState(null, "", "?example=" + name);
+    loadingEl.style.display = "block";
+    var ticket = ++loadTicket;
+    sceneText(sc.source).then(function (text) {
+      if (ticket !== loadTicket) return;
+      resetScene();
+      var next = freshState();
+      Object.assign(next, sc.settings);
+      next.data = text;
+      next.camera = fitCamera(sc.camera, sc.size);
+      state = next;
+      for (var k in S.VIEW_DEFAULTS) viewer.setTrait(k, state[k]);
+      viewer.updateToolbar();
+      viewer.loadStructure();
+      if (Object.keys(sc.colors).length) {
+        viewer.setAtomsColor(sc.colors);
+        customColors = true;
+      }
+      var bg = sc.background;
+      stage.style.background = "radial-gradient(ellipse at 50% 42%, rgb(" + bg[0].join(",") + ") 0%, rgb(" +
+                               bg[1].join(",") + ") 100%)";
+      syncControls();
+      markPreset(null);
+      var atoms = (text.match(/^(ATOM  |HETATM)/gm) || []).length || parseInt(text) || 0;
+      info.textContent = /atoms/.test(sc.caption) ? sc.caption : sc.caption + " · " + atoms.toLocaleString() + " atoms";
+    }).catch(function (e) {
+      if (ticket === loadTicket) info.textContent = "Could not load: " + e.message;
+    }).then(function () { if (ticket === loadTicket) loadingEl.style.display = "none"; });
+  }
+
   var galleryBox = document.getElementById("galleryGroups");
-  GROUPS.forEach(function (g) {
-    var h = document.createElement("h3");
-    h.textContent = g.title;
-    var grid = document.createElement("div");
-    grid.className = "grid";
-    g.items.forEach(function (item) {
-      var fig = document.createElement("figure");
-      var img = document.createElement("img");
-      img.loading = "lazy";
-      img.src = GALLERY + item.name + ".jpg";
-      img.alt = item.caption;
-      var cap = document.createElement("figcaption");
-      cap.textContent = item.caption;
-      fig.appendChild(img);
-      fig.appendChild(cap);
-      grid.appendChild(fig);
+  function buildGallery() {
+    var groups = [];
+    Object.keys(SCENES).forEach(function (name) {
+      var g = SCENES[name].group;
+      if (groups.indexOf(g) < 0) groups.push(g);
     });
-    galleryBox.appendChild(h);
-    galleryBox.appendChild(grid);
-  });
+    groups.forEach(function (g) {
+      var h = document.createElement("h3");
+      h.textContent = g;
+      var grid = document.createElement("div");
+      grid.className = "grid";
+      Object.keys(SCENES).filter(function (n) { return SCENES[n].group === g; }).forEach(function (name) {
+        var fig = document.createElement("figure");
+        fig.title = "Load this scene in the viewer";
+        var img = document.createElement("img");
+        img.loading = "lazy";
+        img.src = GALLERY + name + ".jpg";
+        img.alt = SCENES[name].caption;
+        var cap = document.createElement("figcaption");
+        cap.textContent = SCENES[name].caption;
+        fig.appendChild(img);
+        fig.appendChild(cap);
+        fig.addEventListener("click", function () {
+          window.scrollTo({top: 0, behavior: "smooth"});
+          loadScene(name);
+        });
+        grid.appendChild(fig);
+      });
+      galleryBox.appendChild(h);
+      galleryBox.appendChild(grid);
+    });
+  }
 
   syncControls();
   var params = new URLSearchParams(location.search);
+  fetch("scenes.json").then(function (r) { return r.json(); }).then(function (scenes) {
+    SCENES = scenes;
+    buildGallery();
+    if (params.get("example") && SCENES[params.get("example")]) loadScene(params.get("example"));
+  });
   if (params.get("q")) { query.value = params.get("q"); loadQuery(); }
-  else load(SAMPLES[0], SAMPLES[0].button);
+  else if (!params.get("example")) load(SAMPLES[0], SAMPLES[0].button);
 })();
