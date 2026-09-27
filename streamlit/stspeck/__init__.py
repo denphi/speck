@@ -17,7 +17,7 @@ import streamlit.components.v1 as components
 from ._io import (count_frames, fetch_alphafold, fetch_pdb, from_ase, from_pymatgen,
                   from_rdkit, read_file)
 
-__version__ = "0.8.0"
+__version__ = "0.8.1"
 
 __all__ = ["speck", "SETTINGS", "PRESETS", "count_frames", "fetch_alphafold", "fetch_pdb",
            "from_ase", "from_pymatgen", "from_rdkit", "read_file"]
@@ -33,7 +33,7 @@ SETTINGS = {
     "ao": 0.75, "aoRes": 256, "aoSamples": 1024, "spf": 32, "brightness": 0.5,
     "outline": 0.0, "outlineWidth": 1.0, "outlineColor": "#000000",
     "shadows": 0.0, "shadowSoftness": 1.5, "rim": 0.0, "fog": 0.0, "fogColor": "#ffffff",
-    "saturation": 1.0, "tonemap": False, "fxaa": 1, "dofStrength": 0.0, "dofPosition": 0.5,
+    "saturation": 1.0, "tonemap": False, "fxaa": 1, "dofStrength": 0.0, "dofPosition": 0.5, "dofFocus": {},
     # materials
     "specular": 0.0, "gloss": 0.5, "metallic": 0.0, "metallicAtoms": "all",
     # cartoon

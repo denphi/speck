@@ -34,6 +34,7 @@ var newView = module.exports.new = function() {
         resolution: {x:768,y:768},
         dofStrength: 0.0,
         dofPosition: 0.5,
+        dofFocus: {},
         fxaa: 1,
         ligands: true,
         aoSamples: 1024,
@@ -154,7 +155,7 @@ var deserialize = module.exports.deserialize = function(v) {
 
 
 var resolve = module.exports.resolve = function(v) {
-    v.dofStrength = clamp(0, 1, v.dofStrength);
+    v.dofStrength = clamp(0, 3, v.dofStrength);
     v.dofPosition = clamp(0, 1, v.dofPosition);
     v.zoom = clamp(0.001, 2.0, v.zoom);
     v.atomScale = clamp(0, 1, v.atomScale);

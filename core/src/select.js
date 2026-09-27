@@ -63,6 +63,16 @@ function isEmpty(sel) {
     return true;
 }
 
+// Indices of the atoms matching a selection (empty selection: none).
+module.exports.indices = function(s, sel) {
+    var out = [];
+    if (isEmpty(sel)) return out;
+    for (var i = 0; i < s.atoms.length; i++) {
+        if (matches(s.atoms[i], i, sel)) out.push(i);
+    }
+    return out;
+};
+
 // Blend toward a pale neutral so the highlighted part stands out.
 var ghostColor = module.exports.ghostColor = function(c, ghost) {
     var t = 0.85 * ghost;

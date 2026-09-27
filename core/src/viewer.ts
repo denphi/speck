@@ -50,6 +50,7 @@ export const VIEW_DEFAULTS: { [key: string]: any } = {
   fxaa: 1,
   dofStrength: 0.0,
   dofPosition: 0.5,
+  dofFocus: {},
   // materials
   specular: 0.0,
   gloss: 0.5,

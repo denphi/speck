@@ -116,6 +116,21 @@ var getResidues = module.exports.getResidues = function(s) {
         current.list.push(a);
     }
 
+    // HETATM residues are polymer only when bonded into the chain (modified
+    // residues such as MSE or tRNA bases), not free ligands whose atom names
+    // happen to look like a backbone (peptide-like drugs such as saquinavir).
+    function bonded(a, b) {
+        return a && b && dist(pos(a), pos(b)) < 2.0;
+    }
+    function linkedIntoChain(i) {
+        var r = residues[i], prev = residues[i - 1], next = residues[i + 1];
+        if (prev && prev.chain === r.chain &&
+            (bonded(prev.atoms.C, r.atoms.N) || bonded(prev.atoms["O3'"], r.atoms.P))) return true;
+        if (next && next.chain === r.chain &&
+            (bonded(r.atoms.C, next.atoms.N) || bonded(r.atoms["O3'"], next.atoms.P))) return true;
+        return false;
+    }
+
     var polymer = [];
     for (var i = 0; i < residues.length; i++) {
         var r = residues[i];
@@ -127,6 +142,11 @@ var getResidues = module.exports.getResidues = function(s) {
             r.type = "nucleic";
             r.trace = r.atoms.P;
         } else {
+            continue;
+        }
+        if (r.list[0].hetero && !linkedIntoChain(i)) {
+            r.type = undefined;
+            r.trace = undefined;
             continue;
         }
         for (var j = 0; j < r.list.length; j++) {

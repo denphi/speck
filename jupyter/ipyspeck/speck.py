@@ -168,9 +168,14 @@ class Speck(widgets.DOMWidget):
     fxaa : int
         Anti-aliasing passes, default(1)
     dofStrength : float
-        Depth of field strength [0 - 1], default(0.0)
+        Depth of field strength [0 - 3]. The blur grows with the distance to
+        the focal plane and with zoom, like a macro lens: zoom in on a detail
+        with 1 - 2 for a macro-photography look, default(0.0)
     dofPosition : float
-        Depth of field focus position [0 - 1], default(0.5)
+        Focal depth [0 - 1] (front to back of the scene), default(0.5)
+    dofFocus : dict
+        Keep a selection in focus instead of dofPosition, e.g.
+        {"resName": "HEM"}; same keys as highlight, default({})
 
     Materials
 
@@ -274,8 +279,8 @@ class Speck(widgets.DOMWidget):
     _model_name = Unicode('SpeckModel').tag(sync=True)
     _view_module = Unicode('ipyspeck').tag(sync=True)
     _model_module = Unicode('ipyspeck').tag(sync=True)
-    _view_module_version = Unicode('^0.8.0').tag(sync=True)
-    _model_module_version = Unicode('^0.8.0').tag(sync=True)
+    _view_module_version = Unicode('^0.8.1').tag(sync=True)
+    _model_module_version = Unicode('^0.8.1').tag(sync=True)
 
     data = Unicode('').tag(sync=True)
     toolbar = Bool(True).tag(sync=True)
@@ -316,6 +321,7 @@ class Speck(widgets.DOMWidget):
     fxaa = Int(1, min=0, max=8).tag(sync=True)
     dofStrength = Float(0.0).tag(sync=True)
     dofPosition = Float(0.5).tag(sync=True)
+    dofFocus = Dict().tag(sync=True)
 
     # materials
     specular = Float(0.0).tag(sync=True)
@@ -380,12 +386,13 @@ class Speck(widgets.DOMWidget):
             return value
         raise TraitError("%s must be a '#rrggbb' color" % proposal['trait'].name)
 
-    @validate('highlight')
-    def _valid_highlight(self, proposal):
+    @validate('highlight', 'dofFocus')
+    def _valid_selection(self, proposal):
         unknown = set(proposal['value']) - set(_SELECTION_KEYS)
         if unknown:
             raise TraitError(
-                "unknown highlight keys %s; use %s" % (sorted(unknown), ', '.join(_SELECTION_KEYS))
+                "unknown %s keys %s; use %s"
+                % (proposal['trait'].name, sorted(unknown), ', '.join(_SELECTION_KEYS))
             )
         return proposal['value']
 

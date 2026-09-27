@@ -21,7 +21,8 @@ var QUAD = [
 // Key light for specular highlights, in view space (upper left, towards viewer).
 var LIGHT_DIR = glm.vec3.normalize(glm.vec3.create(), [-0.45, 0.6, 0.66]);
 var SHADOW_RES = 2048;
-var parseColor = require("./select").parseColor;
+var Select = require("./select");
+var parseColor = Select.parseColor;
 
 module.exports = function (canvas, resolution, aoResolution) {
         let m_resolution = Math.max(resolution.x, resolution.y)
@@ -61,6 +62,8 @@ module.exports = function (canvas, resolution, aoResolution) {
         var tShadowMapColor, tShadowMap, tShadow;
         var fbShadowMap, fbShadow;
         var fogExtent = {near: 0, far: 1};
+        // Focal depth for depth of field (from view.dofFocus when set).
+        var dofDepth = 0.5;
 
         var fbSceneColor, fbSceneNormal,
             fbRandRot,
@@ -455,6 +458,7 @@ module.exports = function (canvas, resolution, aoResolution) {
         function color(view) {
             colorRendered = true;
             fogExtent = depthExtent(view);
+            dofDepth = focusDepth(view);
             gl.viewport(0, 0, m_resolution, m_resolution);
             fbSceneColor.bind();
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -697,6 +701,33 @@ module.exports = function (canvas, resolution, aoResolution) {
             rShadow.render();
         }
 
+        // Normalized depth of the dofFocus selection's center, or dofPosition.
+        function focusDepth(view) {
+            var sel = view.dofFocus;
+            if (!sel || Object.keys(sel).length === 0) {
+                return view.dofPosition;
+            }
+            var key = JSON.stringify(sel);
+            if (!system._dofFocus || system._dofFocus.key !== key) {
+                system._dofFocus = {key: key, indices: Select.indices(system, sel)};
+            }
+            var idx = system._dofFocus.indices;
+            if (idx.length === 0) {
+                return view.dofPosition;
+            }
+            var m = view.rotation, z = 0, front = -Infinity;
+            for (var i = 0; i < idx.length; i++) {
+                var a = system.atoms[idx[i]];
+                var zi = m[2] * a.x + m[6] * a.y + m[10] * a.z;
+                z += zi;
+                front = Math.max(front, zi);
+            }
+            z /= idx.length;
+            // Focus toward the nearest part of the subject, as a photographer would.
+            z += 0.4 * (front - z);
+            return Math.min(1, Math.max(0, 0.5 - z / range));
+        }
+
         // Front and back of the drawn structure in normalized depth, for fog.
         function depthExtent(view) {
             var m = view.rotation;
@@ -806,7 +837,9 @@ module.exports = function (canvas, resolution, aoResolution) {
                     progDOF.setUniform("uColor", "1i", tAO.index);
                 }
                 progDOF.setUniform("uDepth", "1i", tSceneDepth.index);
-                progDOF.setUniform("uDOFPosition", "1f", view.dofPosition);
+                progDOF.setUniform("uDOFPosition", "1f", dofDepth);
+                progDOF.setUniform("uRange", "1f", range);
+                progDOF.setUniform("uZoom", "1f", view.zoom);
                 progDOF.setUniform("uDOFStrength", "1f", view.dofStrength);
                 progDOF.setUniform("uRes", "1f", m_resolution);
                 rDOF.render();
