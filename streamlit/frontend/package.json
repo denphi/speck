@@ -1,0 +1,22 @@
+{
+  "name": "stspeck-frontend",
+  "version": "0.8.0",
+  "private": true,
+  "description": "Streamlit frontend for stspeck; bundles the shared Speck viewer from ../../core",
+  "scripts": {
+    "build": "npm run build:core && webpack --mode=production",
+    "watch": "webpack --mode=development --watch",
+    "build:core": "tsc -p ../../core && tsc -p ../../core/tsconfig.types.json"
+  },
+  "dependencies": {
+    "lodash": "^4.17.21"
+  },
+  "devDependencies": {
+    "css-loader": "^6.9.1",
+    "style-loader": "^3.3.4",
+    "ts-loader": "^9.5.1",
+    "typescript": "~5.3.3",
+    "webpack": "^5.90.0",
+    "webpack-cli": "^5.1.4"
+  }
+}

@@ -6,6 +6,20 @@ Speck is a molecule renderer with the goal of producing figures that are as attr
   <img src="https://raw.githubusercontent.com/wwwtyro/speck/gh-pages/static/screenshots/demo-2.png">
 </p>
 
+## Python packages
+
+This repository also hosts two Python packages built on the same renderer:
+
+| Folder | Package | Use it in |
+|---|---|---|
+| [`jupyter/`](jupyter/) | **ipyspeck** | Jupyter Notebook / JupyterLab (ipywidgets 7 and 8) |
+| [`streamlit/`](streamlit/) | **stspeck** | Streamlit apps |
+| [`core/`](core/) | — | Shared renderer and viewer used by both |
+
+Both add cartoons, molecular surfaces (optionally transparent), metallic and glossy
+materials, shadows, fog, highlighting, trajectories, unit cells and high-resolution
+export on top of the ambient-occlusion renderer described below.
+
 ## Try it live
 
 Try speck out live in your browser here: http://wwwtyro.github.io/speck/

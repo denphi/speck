@@ -8,7 +8,7 @@
   },
   "dependencies": {
     "brfs": "~1.2.0",
-    "ipyspeck": "file:widget/ipyspeck/js",
+    "ipyspeck": "file:jupyter/js",
     "jquery": "^2.2.4",
     "keyboardjs": "^0.4.3",
     "lodash": "^4.17.20",

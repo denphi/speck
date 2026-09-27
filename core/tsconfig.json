@@ -1,0 +1,21 @@
+{
+  // Compiles the shared viewer (viewer.ts) and copies the renderer modules
+  // (*.js) into lib/, which ipyspeck (../jupyter) and stspeck (../streamlit)
+  // import. tsconfig.types.json adds lib/viewer.d.ts. Build with:
+  //   tsc -p core && tsc -p core/tsconfig.types.json
+  "compilerOptions": {
+    "allowJs": true,
+    "esModuleInterop": true,
+    "lib": ["es2017", "dom"],
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "noUnusedLocals": true,
+    "outDir": "lib",
+    "rootDir": "src",
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "es2015",
+    "types": []
+  },
+  "include": ["src/**/*"]
+}

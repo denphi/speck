@@ -1,0 +1,80 @@
+/* Speck widget styles */
+
+.ipyspeck-widget {
+  position: relative;
+  width: 100%;
+  /* Default size; widget.layout.height / width override it. */
+  height: 400px;
+  overflow: hidden;
+}
+
+.ipyspeck-canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+  cursor: grab;
+}
+
+.ipyspeck-canvas:active {
+  cursor: grabbing;
+}
+
+.ipyspeck-toolbar {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  max-width: calc(100% - 12px);
+  user-select: none;
+}
+
+.ipyspeck-toolbar-group {
+  display: flex;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 6px;
+  padding: 1px;
+}
+
+.ipyspeck-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  border-radius: 4px;
+  color: #9a9a9a;
+  cursor: pointer;
+}
+
+.ipyspeck-button:hover {
+  color: #555555;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.ipyspeck-button.active {
+  color: #1f6feb;
+  background: rgba(31, 111, 235, 0.12);
+}
+
+.ipyspeck-button svg {
+  display: block;
+  pointer-events: none;
+}
+
+.ipyspeck-status {
+  display: none;
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.85);
+  color: #555555;
+  font-size: 11px;
+  pointer-events: none;
+}

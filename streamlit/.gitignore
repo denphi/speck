@@ -1,0 +1,4 @@
+frontend/node_modules/
+stspeck/static/
+dist/
+__pycache__/

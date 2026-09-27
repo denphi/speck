@@ -1,0 +1,46 @@
+[build-system]
+requires = ["hatchling>=1.21.1", "hatch-jupyter-builder>=0.8.3"]
+build-backend = "hatchling.build"
+
+[project]
+name = "stspeck"
+version = "0.8.0"
+description = "Speck molecule viewer for Streamlit: ambient occlusion, cartoons, surfaces and materials"
+readme = "README.md"
+license = { text = "BSD-3-Clause" }
+requires-python = ">=3.8"
+authors = [{ name = "Daniel Mejia (Denphi)", email = "denphi@denphi.com" }]
+keywords = ["Streamlit", "Molecule", "Visualization", "Chemistry", "Protein"]
+classifiers = [
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: BSD License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Visualization",
+]
+dependencies = ["streamlit>=1.20"]
+
+[project.urls]
+Homepage = "https://github.com/denphi/speck"
+
+[tool.hatch.build]
+# The built frontend is not in git; include it anyway.
+artifacts = ["stspeck/static"]
+
+[tool.hatch.build.targets.sdist]
+exclude = ["frontend/node_modules"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["stspeck"]
+
+# Builds the frontend (npm, in ./frontend) when stspeck/static is missing.
+# The frontend bundles the viewer shared with ipyspeck (../core).
+[tool.hatch.build.hooks.jupyter-builder]
+build-function = "hatch_jupyter_builder.npm_builder"
+ensured-targets = ["stspeck/static/index.html"]
+skip-if-exists = ["stspeck/static/index.html"]
+
+[tool.hatch.build.hooks.jupyter-builder.build-kwargs]
+path = "frontend"
+build_cmd = "build"
+npm = ["npm"]

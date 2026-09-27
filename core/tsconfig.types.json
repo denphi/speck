@@ -1,0 +1,11 @@
+{
+  // Type declarations for the viewer only (the renderer modules are untyped JS
+  // loaded through require()).
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowJs": false,
+    "declaration": true,
+    "emitDeclarationOnly": true
+  },
+  "include": ["src/viewer.ts", "src/require.d.ts"]
+}
