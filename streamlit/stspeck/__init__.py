@@ -14,26 +14,27 @@ import os
 
 import streamlit.components.v1 as components
 
-from ._io import (count_frames, fetch_alphafold, fetch_pdb, from_ase, from_pymatgen,
-                  from_rdkit, read_file)
+from ._io import (count_frames, fetch_alphafold, fetch_pdb, from_ase, from_mdanalysis, from_mdtraj,
+                  from_pymatgen, from_rdkit, read_file)
 
-__version__ = "0.8.2"
+__version__ = "0.8.3"
 
 __all__ = ["speck", "SETTINGS", "PRESETS", "count_frames", "fetch_alphafold", "fetch_pdb",
-           "from_ase", "from_pymatgen", "from_rdkit", "read_file"]
+           "from_ase", "from_mdanalysis", "from_mdtraj", "from_pymatgen", "from_rdkit", "read_file"]
 
 # Settings with their defaults; identical to the ipyspeck traits.
 SETTINGS = {
     # atoms and bonds
     "bonds": True, "atomScale": 0.24, "relativeAtomScale": 0.64, "bondScale": 0.5,
-    "bondThreshold": 1.2, "bondShade": 0.5, "atomShade": 0.5, "ligands": True,
+    "bondThreshold": 1.2, "bondShade": 0.5, "atomShade": 0.5, "ligands": True, "water": True,
     # colors
-    "colorScheme": "speck", "atomColors": {},
+    "colorScheme": "speck", "atomColors": {}, "atomColor": "element", "palette": "default",
     # highlighting
     "highlight": {}, "highlightColor": "", "highlightScale": 1.0, "ghost": 0.0,
     # lighting and effects
     "ao": 0.75, "aoRes": 256, "aoSamples": 1024, "spf": 32, "brightness": 0.5,
-    "outline": 0.0, "outlineWidth": 1.0, "outlineColor": "#000000",
+    "outline": 0.0, "outlineWidth": 1.0, "outlineColor": "#000000", "outlineMode": "depth",
+    "floor": 0.0, "floorReflection": 0.3,
     "shadows": 0.0, "shadowSoftness": 1.5, "rim": 0.0, "fog": 0.0, "fogColor": "#ffffff",
     "saturation": 1.0, "tonemap": False, "fxaa": 1, "dofStrength": 0.0, "dofPosition": 0.5, "dofFocus": {},
     # materials
@@ -46,7 +47,8 @@ SETTINGS = {
     "surface": False, "surfaceColor": "element", "surfaceAtoms": "polymer", "surfaceProbe": 1.4,
     "surfaceResolution": 0.5, "surfaceShade": 0.1, "surfaceOpacity": 1.0,
     # unit cell and trajectory
-    "unitCell": False, "cellColor": "#666666", "cellRadius": 0.12, "frame": 0,
+    "unitCell": False, "cellColor": "#666666", "cellRadius": 0.12, "frame": 0, "cutaway": 0.0, "cutawayAxis": "view",
+    "cutawayLight": 0.5,
     # interface
     "autoRotate": False, "toolbar": True,
 }
@@ -56,7 +58,10 @@ PRESETS = {
     "default": dict(ao=0.75, brightness=0.5, atomShade=0.5, bondShade=0.5, cartoonShade=0.2,
                     surfaceShade=0.1, outline=0.0, outlineWidth=1.0, outlineColor="#000000",
                     specular=0.0, gloss=0.5, metallic=0.0, metallicAtoms="all", shadows=0.0,
-                    rim=0.0, fog=0.0, saturation=1.0, tonemap=False, dofStrength=0.0),
+                    rim=0.0, fog=0.0, fogColor="#ffffff", saturation=1.0, tonemap=False, dofStrength=0.0,
+                    surfaceOpacity=1.0, surfaceColor="element", atomColor="element", palette="default",
+                    water=True,
+                    outlineMode="depth"),
     "matte": dict(ao=0.9, brightness=0.55),
     "glossy": dict(specular=0.6, gloss=0.65, rim=0.2, tonemap=True),
     "toon": dict(ao=0.3, outline=1.0, outlineWidth=1.5, atomShade=0.3, cartoonShade=0.1),
@@ -67,6 +72,11 @@ PRESETS = {
                   tonemap=True),
     "glass": dict(surface=True, surfaceOpacity=0.35, surfaceColor="#e8e4dc", specular=0.4,
                   gloss=0.7, cartoon=True),
+    "goodsell": dict(ao=0.3, brightness=0.82, atomShade=0.0, outline=1.0, outlineWidth=0.9, fog=0.4,
+                     fogColor="#000000",
+                     outlineColor="#141414", outlineMode="molecules", atomColor="chain",
+                     palette="goodsell", cartoon=False, surface=False, bonds=False, water=False,
+                     atomScale=0.7, relativeAtomScale=1.0),
 }
 
 _DEV_URL = os.environ.get("STSPECK_DEV_URL")
@@ -77,7 +87,7 @@ else:
         "stspeck", path=os.path.join(os.path.dirname(os.path.abspath(__file__)), "static"))
 
 
-def speck(data="", *, height=400, preset=None, camera=None, return_state=False,
+def speck(data="", *, trajectory=None, height=400, preset=None, camera=None, return_state=False,
           export_width=None, export_height=None, export_scale=2, export_supersample=2,
           export_transparent=True, export_background="#ffffff", export_filename="speck.png",
           key=None, **settings):
@@ -86,9 +96,14 @@ def speck(data="", *, height=400, preset=None, camera=None, return_state=False,
     Parameters
     ----------
     data : str
-        Structure as XYZ / extended XYZ or PDB text. The loaders
-        (fetch_pdb, fetch_alphafold, from_ase, ...) return keyword dicts to
-        splat into this call.
+        Structure text: PDB, mmCIF, SDF / MOL or XYZ / extended XYZ. The
+        loaders (fetch_pdb, fetch_alphafold, from_ase, from_mdtraj, ...)
+        return keyword dicts to splat into this call.
+    trajectory : bytes, optional
+        Frames for `data` as little-endian float32 x, y, z of every atom,
+        frame after frame (from_mdtraj and from_mdanalysis fill it in).
+        Drive `frame=` with a slider; count_frames(data, trajectory) gives
+        the number of frames.
     height : int
         Height of the viewer in pixels (it fills the column width).
     preset : str, optional
@@ -133,6 +148,7 @@ def speck(data="", *, height=400, preset=None, camera=None, return_state=False,
               "supersample": export_supersample, "transparent": export_transparent,
               "background": export_background, "filename": export_filename}
     return _component(
-        data=data, height=int(height), camera=camera or {}, return_state=bool(return_state),
+        data=data, trajectory=bytes(trajectory) if trajectory else None,
+        height=int(height), camera=camera or {}, return_state=bool(return_state),
         export={k: v for k, v in export.items() if v is not None}, key=key, default=None,
         **values)

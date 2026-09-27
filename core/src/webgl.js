@@ -60,6 +60,10 @@ function Framebuffer(gl, color, depth, ext) {
         gl.bindFramebuffer(gl.FRAMEBUFFER, self.fb);
     }
 
+    self.destroy = function() {
+        gl.deleteFramebuffer(self.fb);
+    }
+
     self.initialize();
 
 };
@@ -102,6 +106,10 @@ function Texture(gl, index, data, width, height, options) {
         gl.activeTexture(gl.TEXTURE0 + self.index);
     };
 
+    self.destroy = function() {
+        gl.deleteTexture(self.texture);
+    }
+
     self.reset = function() {
         self.activate();
         self.bind();
@@ -133,6 +141,10 @@ function GLBuffer(gl) {
         gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
     }
 
+    self.destroy = function() {
+        gl.deleteBuffer(self.buffer);
+    }
+
     self.initialize();
 };
 
@@ -143,6 +155,7 @@ module.exports.GLBuffer = GLBuffer;
 function Renderable(gl, program, buffers, primitiveCount) {
 
     var self = this;
+    self.buffers = buffers;
 
     self.primitiveCount = primitiveCount;
 
@@ -165,8 +178,8 @@ function Renderable(gl, program, buffers, primitiveCount) {
             gl.vertexAttribPointer(location, size, gl.FLOAT, false, 0, 0);
         }
         gl.drawArrays(gl.TRIANGLES, 0, 3 * primitiveCount);
-        for (name in self.buffers) {
-            gl.disableVertexAttribArray(program.attributes[name].location);
+        for (name in buffers) {
+            gl.disableVertexAttribArray(program.attribs[name].location);
         }
     }
 
@@ -177,36 +190,33 @@ module.exports.Renderable = Renderable;
 
 
 //|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-function InstancedRenderable(gl, program, buffers, primitiveCount, instancedExt) {
+// One shape (e.g. an imposter quad or box, `vertexCount` vertices) drawn
+// `instanceCount` times with ANGLE_instanced_arrays. Buffers with divisor 1
+// hold one value per instance, the rest one per vertex of the shape, so each
+// atom or bond is stored once instead of once per vertex.
+function InstancedRenderable(gl, program, buffers, vertexCount, instanceCount, instancedExt, mode) {
 
     var self = this;
-
-    self.initialize = function() {
-    }
+    self.buffers = buffers;
 
     self.render = function() {
         program.use();
-        for (name in buffers) {
-            var buffer = buffers[name].buffer;
-            var size = buffers[name].size;
-            try {
-                var location = program.attribs[name].location;
-            } catch (e) {
-                console.log("Could not find location for", name);
-                throw e;
-            }
-            buffer.bind();
+        var used = [];
+        for (var name in buffers) {
+            var location = program.attribs[name].location;
+            buffers[name].buffer.bind();
             gl.enableVertexAttribArray(location);
-            gl.vertexAttribPointer(location, size, gl.FLOAT, false, 0, 0);
-            instancedExt.vertexAttribDivisorANGLE(location, buffers[name].divisor);                
+            gl.vertexAttribPointer(location, buffers[name].size, gl.FLOAT, false, 0, 0);
+            instancedExt.vertexAttribDivisorANGLE(location, buffers[name].divisor || 0);
+            used.push(location);
         }
-        instancedExt.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 6*2*3, primitiveCount)
-        for (name in self.buffers) {
-            gl.disableVertexAttribArray(program.attributes[name].location);
+        instancedExt.drawArraysInstancedANGLE(mode === undefined ? gl.TRIANGLES : mode, 0, vertexCount, instanceCount);
+        // Divisors are global attribute state: reset them for other programs.
+        for (var k = 0; k < used.length; k++) {
+            instancedExt.vertexAttribDivisorANGLE(used[k], 0);
+            gl.disableVertexAttribArray(used[k]);
         }
     }
-
-    self.initialize();
 };
 
 module.exports.InstancedRenderable = InstancedRenderable;
@@ -312,3 +322,11 @@ function Program(gl, vertexSource, fragmentSource) {
 
 //|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 module.exports.Program = Program;
+
+// Frees the GPU buffers of a Renderable or InstancedRenderable (or null).
+module.exports.destroy = function(renderable) {
+    if (!renderable) return;
+    for (var name in renderable.buffers) {
+        renderable.buffers[name].buffer.destroy();
+    }
+};

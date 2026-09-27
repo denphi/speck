@@ -15,8 +15,9 @@ pip install stspeck      # Python 3.8+, Streamlit 1.20+
 import streamlit as st
 import stspeck
 
-# Any structure as PDB or (extended) XYZ text
-stspeck.speck(data=open("1ubq.pdb").read(), cartoon=True, surface=True, surfaceOpacity=0.35)
+# Any structure as PDB, mmCIF, SDF / MOL or (extended) XYZ text (detected from the content)
+stspeck.speck(data=open("1ubq.cif").read(), cartoon=True, surface=True, surfaceOpacity=0.35)
+stspeck.speck(**stspeck.read_file("conformers.sdf.gz"), frame=2)
 
 # Loaders return keyword arguments to splat into speck()
 stspeck.speck(**stspeck.fetch_alphafold("Q8W3K0"), preset="cover", height=500)
@@ -30,13 +31,23 @@ stspeck.speck(**stspeck.from_ase(atoms), preset="metal")   # also from_rdkit, fr
   auto-rotate, tap to focus (or Alt-click), a depth-of-field toggle, a color menu for cartoon, surface and atoms,
   and a camera button that downloads a high-resolution PNG
   (`export_width=3000`, `export_scale=...`). Toolbar choices persist across reruns.
+- **Studio floor, illustration, cutaway**: `floor=0.9, floorReflection=0.3`; `preset="goodsell"`
+  (flat colors per chain, outlines between molecules), `atomColor="type"`, `palette="colorblind"`;
+  `cutaway=0.5` slices off the front to show the inside (`cutawayAxis="z"` fixes the plane on the
+  molecule, `cutawayLight=0.6` lights the inside).
 - **Colors**: `colorScheme="jmol"` (speck, jmol, rasmol, newcpk) and per-element
   `atomColors={"Au": "#ffcc33"}` (`'#rrggbb'` or `[r, g, b]` in 0 - 1).
 - **Touch and keyboard**: one finger rotates, two fingers pinch to zoom and pan; arrows
   rotate, Shift+arrows pan, + / - zoom, 0 recenters, F focuses at the center.
 - **State**: with `return_state=True` the call returns the camera, the current
   settings and `nframes`; pass the camera back as `camera=` to restore a view.
-- **Trajectories**: multi-frame XYZ or multi-model PDB; drive `frame=` with a slider
+- **Formats**: `fetch_pdb` downloads mmCIF, which also covers entries too large for PDB files
+  (e.g. the 4V6X ribosome); `format="pdb"` gets the legacy file, and `assembly=1` a biological
+  assembly (`fetch_pdb("1STM", assembly=1)`: a complete virus capsid). Bonds listed in the file
+  (CONECT, `_struct_conn`, SDF / MOL bonds) are always drawn.
+- **Trajectories**: multi-frame XYZ, multi-model PDB or mmCIF, or SDF conformers; drive `frame=` with a slider.
+  MD: `stspeck.speck(**stspeck.from_mdtraj(traj), frame=f)` (or `from_mdanalysis`); frames go as
+  binary coordinates (`trajectory=`), and `count_frames(data, trajectory)` gives the slider range
   (`stspeck.count_frames(data)` gives the range).
 
 Run the demo with `streamlit run example/app.py`.
@@ -85,6 +96,11 @@ Rendered with the ipyspeck / stspeck renderer (see `example/showcase.ipynb` for 
 </tr>
 <tr>
 <td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=ubiquitin_surface"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/ubiquitin_surface.jpg" width="100%"/></a><br/><sub>Ubiquitin surface (1UBQ)</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=ribosome"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/ribosome.jpg" width="100%"/></a><br/><sub>Human 80S ribosome, 237,685 atoms (4V6X)</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=capsid"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/capsid.jpg" width="100%"/></a><br/><sub>Virus capsid, all 60 copies (1STM)</sub></td>
+</tr>
+<tr>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=ms2_capsid"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/ms2_capsid.jpg" width="100%"/></a><br/><sub>Bacteriophage MS2 capsid, 180 copies (2MS2)</sub></td>
 </tr>
 </table>
 
@@ -95,6 +111,21 @@ Rendered with the ipyspeck / stspeck renderer (see `example/showcase.ipynb` for 
 <td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=nucleosome"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/nucleosome.jpg" width="100%"/></a><br/><sub>Nucleosome (1KX5)</sub></td>
 <td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=trna"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/trna.jpg" width="100%"/></a><br/><sub>Transfer RNA (1EHZ)</sub></td>
 <td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=g_quadruplex"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/g_quadruplex.jpg" width="100%"/></a><br/><sub>G-quadruplex with K⁺ (1KF1)</sub></td>
+</tr>
+</table>
+
+### Studio floor, illustration and cutaway
+
+<table>
+<tr>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=floor_hemoglobin"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/floor_hemoglobin.jpg" width="100%"/></a><br/><sub>Hemoglobin on the studio floor (4HHB)</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=floor_gold"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/floor_gold.jpg" width="100%"/></a><br/><sub>Gold–thiolate cluster on the studio floor</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=goodsell_hemoglobin"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/goodsell_hemoglobin.jpg" width="100%"/></a><br/><sub>Hemoglobin, Goodsell style (4HHB)</sub></td>
+</tr>
+<tr>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=goodsell_capsid"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/goodsell_capsid.jpg" width="100%"/></a><br/><sub>Virus capsid, Goodsell style (1STM)</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=goodsell_ribosome"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/goodsell_ribosome.jpg" width="100%"/></a><br/><sub>Ribosome large subunit, Goodsell style (1FFK)</sub></td>
+<td align="center" width="33%"><a href="https://denphi.github.io/speck/?example=cutaway_capsid"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/cutaway_capsid.jpg" width="100%"/></a><br/><sub>Virus capsid, cut open (1STM)</sub></td>
 </tr>
 </table>
 

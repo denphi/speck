@@ -46,7 +46,7 @@ function download(png: ArrayBuffer, name: string) {
 
 function createViewer() {
   viewer = new SpeckViewer(root, {
-    get: (trait) => state[trait],
+    get: (trait) => (trait === 'trajectory' ? trajectory : state[trait]),
     set: (changes) => {
       for (const trait in changes) {
         state[trait] = changes[trait];
@@ -59,7 +59,10 @@ function createViewer() {
       report();
     },
     framesChanged: (n) => {
-      nframes = n;
+      if (n !== nframes) {
+        nframes = n;
+        report();
+      }
     },
     // Camera button: high-resolution, supersampled PNG.
     snapshot: () => {
@@ -71,6 +74,25 @@ function createViewer() {
   });
 }
 
+// MD frames (bytes from stspeck.from_mdtraj / from_mdanalysis) as a Float32Array.
+let trajectory: Float32Array | null = null;
+let trajectoryBytes: Uint8Array | null = null;
+function sameBytes(a: Uint8Array | null, b: Uint8Array | null) {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+function setTrajectory(value: any): boolean {
+  const bytes: Uint8Array | null =
+    value instanceof Uint8Array ? value : value instanceof ArrayBuffer ? new Uint8Array(value) : null;
+  if (sameBytes(bytes, trajectoryBytes)) return false;
+  trajectoryBytes = bytes;
+  // Copy into an aligned buffer (the bytes may sit at any offset).
+  trajectory = bytes && bytes.length >= 12 ? new Float32Array(bytes.slice().buffer, 0, Math.floor(bytes.length / 4)) : null;
+  return true;
+}
+
 function onRender(args: { [key: string]: any }) {
   const height = args.height || 400;
   root.style.height = height + 'px';
@@ -79,7 +101,8 @@ function onRender(args: { [key: string]: any }) {
   exportOptions = args.export || {};
 
   const changed = (key: string) => key in args && !same(args[key], lastArgs[key]);
-  const dataChanged = changed('data');
+  const trajectoryChanged = setTrajectory(args.trajectory);
+  const dataChanged = changed('data') || trajectoryChanged;
   const newCamera = changed('camera') && args.camera && args.camera.rotation;
   for (const key of ['data', 'toolbar', 'camera', ...VIEW_TRAITS]) {
     if (changed(key)) state[key] = args[key];

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Ccircle cx=%2711%27 cy=%2712%27 r=%277%27 fill=%27%232f6fe0%27/%3E%3Ccircle cx=%2722%27 cy=%2721%27 r=%275%27 fill=%27%23e2403a%27/%3E%3Ccircle cx=%2722%27 cy=%278%27 r=%273%27 fill=%27%231c2130%27/%3E%3C/svg%3E">
-<title>ipyspeck 0.8.2 · molecular graphics for Jupyter and Streamlit</title>
+<title>ipyspeck 0.8.3 · molecular graphics for Jupyter and Streamlit</title>
 <meta name="description" content="Publication-quality molecular rendering in the browser: cartoons, surfaces, glass, metals, shadows and macro depth of field. ipyspeck for Jupyter, stspeck for Streamlit.">
 <style>
   :root {
@@ -26,13 +26,39 @@
   .app { display: grid; grid-template-columns: minmax(0, 1fr) 320px; height: calc(100vh - 67px); min-height: 560px; }
   .stage { position: relative; min-width: 0; transition: background 0.3s; }
   #viewer { position: absolute; inset: 0; width: 100%; height: 100%; }
-  .loading { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); color: var(--muted);
-    background: rgba(255,255,255,0.85); padding: 8px 14px; border-radius: 8px; display: none; }
   .hint { position: absolute; left: 14px; bottom: 12px; color: var(--muted); font-size: 12px; pointer-events: none; }
+  .stage.dark .hint { color: rgba(255, 255, 255, 0.55); }
+  .vignette { position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 55%, rgba(0,0,0,0.22) 100%); }
   aside { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; padding: 14px 18px 28px; }
-  aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted);
-    margin: 18px 0 8px; font-weight: 600; }
-  aside h2:first-child { margin-top: 4px; }
+  details.sec { border-bottom: 1px solid var(--line); }
+  details.sec > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px;
+    padding: 11px 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 600; }
+  details.sec > summary::-webkit-details-marker { display: none; }
+  details.sec > summary::before { content: ""; width: 6px; height: 6px; border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform 0.15s; margin: 0 3px 0 1px; }
+  details.sec[open] > summary::before { transform: rotate(45deg); }
+  details.sec > summary:hover { color: var(--ink); }
+  details.sec > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+  .sum-hint { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 400; }
+  .sec-body { padding: 0 0 12px; }
+  .note { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
+  .swatches { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 8px; }
+  .swatches button { width: 30px; height: 30px; padding: 0; border-radius: 50%; border: 2px solid var(--line); }
+  .swatches button.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+  input[type=color] { width: 100%; height: 28px; padding: 1px 2px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+  .check input[type=color] { width: 44px; margin-left: auto; }
+  pre.code { background: var(--code); border-radius: 6px; padding: 8px 10px; font-size: 11.5px; white-space: pre-wrap;
+    word-break: break-word; margin: 8px 0 0; max-height: 260px; overflow: auto; }
+  #copyPython { margin-top: 8px; width: 100%; }
+  .reset-all { margin-top: 10px; width: 100%; }
+  .reset-sec { display: block; margin: 8px 0 0 auto; padding: 2px 8px; font-size: 12px; color: var(--muted);
+    border-color: transparent; background: transparent; }
+  .reset-sec:hover, .reset-sec:focus-visible { color: var(--accent); border-color: var(--line); }
+  .inline { display: flex; gap: 6px; align-items: center; }
+  .inline input[type=text] { width: 54px; }
+  .inline input[type=color] { width: 44px; }
+  .note a { cursor: pointer; }
   .row { display: grid; grid-template-columns: 104px 1fr 34px; align-items: center; gap: 8px; margin: 5px 0; }
   .row .v { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; }
   .field { display: grid; grid-template-columns: 104px 1fr; align-items: center; gap: 8px; margin: 5px 0; }
@@ -77,7 +103,7 @@
 </head>
 <body>
 <header>
-  <h1>ipyspeck <a class="version" href="https://pypi.org/project/ipyspeck/0.8.2/" title="Release on PyPI">0.8.2</a> <span>molecular graphics for Jupyter and Streamlit</span></h1>
+  <h1>ipyspeck <a class="version" href="https://pypi.org/project/ipyspeck/0.8.3/" title="Release on PyPI">0.8.3</a> <span>molecular graphics for Jupyter and Streamlit</span></h1>
   <nav>
     <a href="#install">Install</a>
     <a href="#gallery">Gallery</a>
@@ -90,68 +116,177 @@
 <div class="app">
   <div class="stage">
     <div id="viewer"></div>
-    <div class="loading" id="loading">Loading…</div>
-    <div class="hint">Drag to rotate · Shift-drag to pan · Scroll to zoom · Drop a PDB or XYZ file</div>
+    <div class="hint">Drag to rotate · Shift-drag to pan · Scroll to zoom · Drop a PDB, mmCIF, SDF or XYZ file</div>
   </div>
-  <aside>
-    <h2>Structure</h2>
-    <div class="load">
-      <input type="text" id="query" placeholder="PDB ID or UniProt, e.g. 1UBQ" spellcheck="false">
-      <button class="primary" id="go">Load</button>
-    </div>
-    <div class="chips" id="samples"></div>
-    <div id="info"></div>
-
-    <h2>Look</h2>
-    <div class="presets" id="presets"></div>
-
-    <h2>Representation</h2>
-    <label class="check"><input type="checkbox" data-trait="cartoon"> Cartoon</label>
-    <label class="check"><input type="checkbox" data-trait="surface"> Molecular surface</label>
-    <label class="check"><input type="checkbox" data-trait="ligands"> Ligands</label>
-    <div class="field"><span>Cartoon color</span>
-      <select data-trait="cartoonColor">
-        <option value="ss">Secondary structure</option><option value="chain">Chain</option>
-        <option value="rainbow">Rainbow N→C</option><option value="plddt">AlphaFold pLDDT</option>
-      </select></div>
-    <div class="field"><span>Surface color</span>
-      <select data-trait="surfaceColor">
-        <option value="element">Element</option><option value="chain">Chain</option>
-        <option value="rainbow">Rainbow N→C</option><option value="plddt">AlphaFold pLDDT</option>
-        <option value="#eef2f8">Glass white</option>
-      </select></div>
-    <label class="row">Surface opacity<input type="range" data-trait="surfaceOpacity" min="0.05" max="1" step="0.01"><span class="v"></span></label>
-    <div class="field"><span>Atoms</span>
-      <select data-trait="cartoonAtoms">
-        <option value="ligands">Ligands only</option><option value="sidechains">Side chains</option>
-        <option value="all">All atoms</option><option value="none">None</option>
-      </select></div>
-
-    <h2>Light</h2>
-    <label class="row">Occlusion<input type="range" data-trait="ao" min="0" max="1" step="0.01"><span class="v"></span></label>
-    <label class="row">Shadows<input type="range" data-trait="shadows" min="0" max="1" step="0.01"><span class="v"></span></label>
-    <label class="row">Rim light<input type="range" data-trait="rim" min="0" max="1" step="0.01"><span class="v"></span></label>
-    <label class="row">Fog<input type="range" data-trait="fog" min="0" max="1" step="0.01"><span class="v"></span></label>
-    <label class="row">Outline<input type="range" data-trait="outline" min="0" max="1" step="0.01"><span class="v"></span></label>
-    <label class="row">Brightness<input type="range" data-trait="brightness" min="0.2" max="0.9" step="0.01"><span class="v"></span></label>
-
-    <h2>Material</h2>
-    <label class="row">Specular<input type="range" data-trait="specular" min="0" max="1" step="0.01"><span class="v"></span></label>
-    <label class="row">Gloss<input type="range" data-trait="gloss" min="0" max="1" step="0.01"><span class="v"></span></label>
-    <label class="row">Metallic<input type="range" data-trait="metallic" min="0" max="1" step="0.01"><span class="v"></span></label>
-
-    <h2>Depth of field</h2>
-    <label class="row">Strength<input type="range" data-trait="dofStrength" min="0" max="2" step="0.01"><span class="v"></span></label>
-    <label class="row">Focus depth<input type="range" data-trait="dofPosition" min="0" max="1" step="0.01"><span class="v"></span></label>
-    <label class="check"><input type="checkbox" id="focusLigands"> Keep ligands in focus</label>
-
-    <h2>Export</h2>
-    <div class="load">
-      <select id="exportSize">
-        <option value="2000">2000 px</option><option value="3000" selected>3000 px</option><option value="4096">4096 px</option>
-      </select>
-      <button class="primary" id="export">Save PNG</button>
-    </div>
+  <aside id="side">
+    <details class="sec" data-sec="structure" open>
+      <summary>Structure</summary>
+      <div class="sec-body">
+      <div class="load">
+        <input type="text" id="query" placeholder="PDB ID, 1STM-assembly1 or UniProt" spellcheck="false" aria-label="PDB ID, assembly or UniProt accession">
+        <button class="primary" id="go">Load</button>
+      </div>
+      <div class="chips" id="samples"></div>
+      <div id="info"></div>
+      </div>
+    </details>
+    <details class="sec" data-sec="look" open>
+      <summary>Look<span class="sum-hint">presets</span></summary>
+      <div class="sec-body">
+      <div class="presets" id="presets"></div>
+      <button id="resetAll" class="reset-all">Reset all settings</button>
+      </div>
+    </details>
+    <details class="sec" data-sec="representation" open>
+      <summary>Representation</summary>
+      <div class="sec-body">
+      <label class="check"><input type="checkbox" data-trait="cartoon"> Cartoon</label>
+      <label class="check"><input type="checkbox" data-trait="surface"> Molecular surface</label>
+      <label class="check"><input type="checkbox" data-trait="ligands"> Ligands</label>
+      <label class="check"><input type="checkbox" data-trait="bonds"> Bonds</label>
+      <label class="check"><input type="checkbox" data-trait="unitCell"> Unit cell</label>
+      <label class="check"><input type="checkbox" data-trait="water"> Water</label>
+      <label class="row">Cutaway<input type="range" data-trait="cutaway" min="0" max="1" step="0.01" data-digits="2"><span class="v"></span></label>
+      <div class="field"><span>Cut plane</span><select data-trait="cutawayAxis"><option value="view">Facing the camera</option><option value="x">Molecule X axis</option><option value="y">Molecule Y axis</option><option value="z">Molecule Z axis</option></select></div>
+      <label class="row">Cut light<input type="range" data-trait="cutawayLight" min="0" max="1" step="0.01" data-digits="2"><span class="v"></span></label>
+      <div class="field"><span>Atoms with cartoon</span><select data-trait="cartoonAtoms"><option value="ligands">Ligands only</option><option value="sidechains">Side chains</option><option value="all">All atoms</option><option value="none">None</option></select></div>
+      </div>
+    </details>
+    <details class="sec" data-sec="background" open>
+      <summary>Background</summary>
+      <div class="sec-body">
+      <div class="swatches" id="bgSwatches"></div>
+      <label class="field"><span>Center</span><input type="color" id="bgCenter"></label>
+      <label class="field"><span>Edge</span><input type="color" id="bgEdge"></label>
+      <label class="check"><input type="checkbox" id="bgVignette"> Vignette</label>
+      <label class="row">Studio floor<input type="range" data-trait="floor" min="0" max="1" step="0.01" data-digits="2"><span class="v"></span></label>
+      <label class="row">Reflection<input type="range" data-trait="floorReflection" min="0" max="1" step="0.01" data-digits="2"><span class="v"></span></label>
+      </div>
+    </details>
+    <details class="sec" data-sec="colors">
+      <summary>Colors</summary>
+      <div class="sec-body">
+      <div class="field"><span>Cartoon</span><select data-trait="cartoonColor"><option value="ss">Secondary structure</option><option value="chain">Chain</option><option value="entity">Molecule (entity)</option><option value="type">Protein / nucleic acid</option><option value="rainbow">Rainbow N→C</option><option value="plddt">AlphaFold pLDDT</option></select></div>
+      <div class="field"><span>Surface</span><select data-trait="surfaceColor"><option value="element">Element</option><option value="ss">Secondary structure</option><option value="chain">Chain</option><option value="entity">Molecule (entity)</option><option value="type">Protein / nucleic acid</option><option value="rainbow">Rainbow N→C</option><option value="plddt">AlphaFold pLDDT</option><option value="#eef2f8">Glass white</option></select></div>
+      <div class="field"><span>Atoms</span><select data-trait="atomColor"><option value="element">Element</option><option value="chain">Chain</option><option value="entity">Molecule (entity)</option><option value="type">Protein / nucleic acid</option><option value="ss">Secondary structure</option><option value="rainbow">Rainbow N→C</option></select></div>
+      <div class="field"><span>Palette</span><select data-trait="palette"><option value="default">Default</option><option value="goodsell">Goodsell</option><option value="pastel">Pastel</option><option value="colorblind">Colorblind-safe</option><option value="viridis">Viridis</option><option value="grays">Grays</option></select></div>
+      <div class="field"><span>Element color</span><div class="inline"><input type="text" id="elSymbol" placeholder="Au" maxlength="2" spellcheck="false" aria-label="Element symbol"><input type="color" id="elColor" value="#ffcc33" aria-label="Element color"><button id="elSet">Set</button></div></div>
+      <p class="note" id="elList"></p>
+      <div class="field"><span>Element palette</span><select data-trait="colorScheme"><option value="speck">Speck</option><option value="jmol">Jmol</option><option value="rasmol">RasMol</option><option value="newcpk">New CPK</option></select></div>
+      <label class="row">Saturation<input type="range" data-trait="saturation" min="0" max="2" step="0.01" data-digits="2"><span class="v"></span></label>
+      </div>
+    </details>
+    <details class="sec" data-sec="atoms">
+      <summary>Atoms and bonds</summary>
+      <div class="sec-body">
+      <label class="row">Atom size<input type="range" data-trait="atomScale" min="0.05" max="1" step="0.01" data-digits="2"><span class="v"></span></label>
+      <label class="row">Size by element<input type="range" data-trait="relativeAtomScale" min="0" max="1" step="0.01" data-digits="2"><span class="v"></span></label>
+      <label class="row">Bond radius<input type="range" data-trait="bondScale" min="0.1" max="1" step="0.01" data-digits="2"><span class="v"></span></label>
+      <label class="row">Bond reach<input type="range" data-trait="bondThreshold" min="0.8" max="2.0" step="0.01" data-digits="2"><span class="v"></span></label>
+      <label class="row">Atom shade<input type="range" data-trait="atomShade" min="0" max="1" step="0.01" data-digits="2"><span class="v"></span></label>
+      <label class="row">Bond shade<input type="range" data-trait="bondShade" min="0" max="1" step="0.01" data-digits="2"><span class="v"></span></label>
+      </div>
+    </details>
+    <details class="sec" data-sec="cartoon">
+      <summary>Cartoon</summary>
+      <div class="sec-body">
+      <label class="row">Helix width<input type="range" data-trait="cartoonHelixWidth" min="0.5" max="5" step="0.1" data-digits="1"><span class="v"></span></label>
+      <label class="row">Sheet width<input type="range" data-trait="cartoonSheetWidth" min="0.5" max="5" step="0.1" data-digits="1"><span class="v"></span></label>
+      <label class="row">Thickness<input type="range" data-trait="cartoonThickness" min="0.1" max="2" step="0.05" data-digits="2"><span class="v"></span></label>
+      <label class="row">Tube radius<input type="range" data-trait="cartoonTubeRadius" min="0.1" max="1.5" step="0.05" data-digits="2"><span class="v"></span></label>
+      <label class="row">Smoothness<input type="range" data-trait="cartoonQuality" min="3" max="16" step="1" data-digits="0"><span class="v"></span></label>
+      <label class="row">Shade<input type="range" data-trait="cartoonShade" min="0" max="1" step="0.01" data-digits="2"><span class="v"></span></label>
+      </div>
+    </details>
+    <details class="sec" data-sec="surface">
+      <summary>Surface</summary>
+      <div class="sec-body">
+      <label class="row">Opacity<input type="range" data-trait="surfaceOpacity" min="0.05" max="1" step="0.01" data-digits="2"><span class="v"></span></label>
+      <label class="row">Probe radius<input type="range" data-trait="surfaceProbe" min="0.5" max="4" step="0.1" data-digits="1"><span class="v"></span></label>
+      <label class="row">Grid spacing<input type="range" data-trait="surfaceResolution" min="0.35" max="2" step="0.05" data-digits="2"><span class="v"></span></label>
+      <label class="row">Shade<input type="range" data-trait="surfaceShade" min="0" max="1" step="0.01" data-digits="2"><span class="v"></span></label>
+      <div class="field"><span>Wraps</span><select data-trait="surfaceAtoms"><option value="polymer">Protein / nucleic acid</option><option value="all">Everything</option></select></div>
+      </div>
+    </details>
+    <details class="sec" data-sec="highlight">
+      <summary>Highlight</summary>
+      <div class="sec-body">
+      <label class="field"><span>Chain</span><input type="text" id="hlChain" placeholder="A, B" spellcheck="false"></label>
+      <label class="field"><span>Residue name</span><input type="text" id="hlResName" placeholder="HEM" spellcheck="false"></label>
+      <label class="field"><span>Residue numbers</span><input type="text" id="hlResSeq" placeholder="40-60, 72" spellcheck="false"></label>
+      <label class="check"><input type="checkbox" id="hlLigands"> Ligands</label>
+      <label class="check"><input type="checkbox" id="hlRecolor"> Recolor <input type="color" id="hlColor" value="#ffb000" aria-label="Highlight color"></label>
+      <label class="row">Size<input type="range" data-trait="highlightScale" min="0.5" max="3" step="0.05" data-digits="2"><span class="v"></span></label>
+      <label class="row">Fade the rest<input type="range" data-trait="ghost" min="0" max="1" step="0.01" data-digits="2"><span class="v"></span></label>
+      </div>
+    </details>
+    <details class="sec" data-sec="light">
+      <summary>Light</summary>
+      <div class="sec-body">
+      <label class="row">Occlusion<input type="range" data-trait="ao" min="0" max="1" step="0.01" data-digits="2"><span class="v"></span></label>
+      <label class="row">Brightness<input type="range" data-trait="brightness" min="0.2" max="0.9" step="0.01" data-digits="2"><span class="v"></span></label>
+      <label class="row">Shadows<input type="range" data-trait="shadows" min="0" max="1" step="0.01" data-digits="2"><span class="v"></span></label>
+      <label class="row">Softness<input type="range" data-trait="shadowSoftness" min="0.5" max="4" step="0.1" data-digits="1"><span class="v"></span></label>
+      <label class="row">Rim light<input type="range" data-trait="rim" min="0" max="1" step="0.01" data-digits="2"><span class="v"></span></label>
+      <label class="row">Fog<input type="range" data-trait="fog" min="0" max="1" step="0.01" data-digits="2"><span class="v"></span></label>
+      <label class="field"><span>Fog color</span><input type="color" data-trait="fogColor"></label>
+      <label class="row">Outline<input type="range" data-trait="outline" min="0" max="1" step="0.01" data-digits="2"><span class="v"></span></label>
+      <label class="row">Outline width<input type="range" data-trait="outlineWidth" min="0.25" max="4" step="0.05" data-digits="2"><span class="v"></span></label>
+      <label class="field"><span>Outline color</span><input type="color" data-trait="outlineColor"></label>
+      <div class="field"><span>Outline style</span><select data-trait="outlineMode"><option value="depth">Every edge</option><option value="molecules">Between molecules</option></select></div>
+      <label class="check"><input type="checkbox" data-trait="tonemap"> Filmic tone mapping</label>
+      </div>
+    </details>
+    <details class="sec" data-sec="material">
+      <summary>Material</summary>
+      <div class="sec-body">
+      <label class="row">Specular<input type="range" data-trait="specular" min="0" max="1" step="0.01" data-digits="2"><span class="v"></span></label>
+      <label class="row">Gloss<input type="range" data-trait="gloss" min="0" max="1" step="0.01" data-digits="2"><span class="v"></span></label>
+      <label class="row">Metallic<input type="range" data-trait="metallic" min="0" max="1" step="0.01" data-digits="2"><span class="v"></span></label>
+      <div class="field"><span>Metallic atoms</span><select data-trait="metallicAtoms"><option value="all">All atoms</option><option value="metals">Metals only</option></select></div>
+      </div>
+    </details>
+    <details class="sec" data-sec="dof">
+      <summary>Depth of field</summary>
+      <div class="sec-body">
+      <label class="row">Strength<input type="range" data-trait="dofStrength" min="0" max="3" step="0.01" data-digits="2"><span class="v"></span></label>
+      <label class="row">Focus depth<input type="range" data-trait="dofPosition" min="0" max="1" step="0.01" data-digits="2"><span class="v"></span></label>
+      <label class="check"><input type="checkbox" id="focusLigands"> Keep ligands in focus</label>
+      <p class="note">Or tap to focus with the crosshair button in the viewer.</p>
+      </div>
+    </details>
+    <details class="sec" data-sec="motion">
+      <summary>Motion</summary>
+      <div class="sec-body">
+      <label class="check"><input type="checkbox" data-trait="autoRotate"> Auto-rotate</label>
+      <label class="row" id="frameRow">Frame<input type="range" data-trait="frame" min="0" max="0" step="1" data-digits="0"><span class="v"></span></label>
+      </div>
+    </details>
+    <details class="sec" data-sec="quality">
+      <summary>Quality</summary>
+      <div class="sec-body">
+      <div class="field"><span>Occlusion detail</span><select data-trait="aoRes" data-type="number"><option value="256">256</option><option value="512">512</option><option value="1024">1024</option><option value="2048">2048</option></select></div>
+      <div class="field"><span>Occlusion samples</span><select data-trait="aoSamples" data-type="number"><option value="128">128</option><option value="256">256</option><option value="512">512</option><option value="1024">1024</option></select></div>
+      <div class="field"><span>Samples per frame</span><select data-trait="spf" data-type="number"><option value="8">8</option><option value="16">16</option><option value="32">32</option><option value="64">64</option></select></div>
+      <div class="field"><span>Anti-aliasing</span><select data-trait="fxaa" data-type="number"><option value="0">Off</option><option value="1">FXAA</option><option value="2">FXAA ×2</option></select></div>
+      <label class="field"><span>Unit cell color</span><input type="color" data-trait="cellColor"></label>
+      <label class="row">Unit cell radius<input type="range" data-trait="cellRadius" min="0.02" max="0.4" step="0.01" data-digits="2"><span class="v"></span></label>
+      </div>
+    </details>
+    <details class="sec" data-sec="export" open>
+      <summary>Export</summary>
+      <div class="sec-body">
+      <div class="load">
+        <select id="exportSize" aria-label="Image width">
+          <option value="2000">2000 px</option><option value="3000" selected>3000 px</option><option value="4096">4096 px</option>
+        </select>
+        <button class="primary" id="export">Save PNG</button>
+      </div>
+      <label class="check"><input type="checkbox" id="exportTransparent"> Transparent background</label>
+      <button id="copyPython">Copy as Python</button>
+      <pre class="code" id="pythonCode" hidden></pre>
+      </div>
+    </details>
   </aside>
 </div>
 
@@ -188,7 +323,7 @@ stspeck.speck(**stspeck.fetch_pdb("4HHB"),
   based on <a href="https://github.com/wwwtyro/speck">Speck</a> by wwwtyro
 </footer>
 
-<script src="speck.19b055fe8a.js"></script>
+<script src="speck.3df0e53d9d.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

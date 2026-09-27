@@ -18,9 +18,20 @@ var QUAD = [
     -1, -1, 0,   1,  1, 0,  -1, 1, 0
 ];
 
+// The same shapes as triangle strips, for instanced drawing: 4 instead of 6
+// vertices per atom, 14 instead of 36 per bond. Both keep the outward-facing
+// winding of the triangle lists, so back-face culling is unchanged.
+var QUAD_STRIP = [-1, -1, 0,   1, -1, 0,   -1, 1, 0,   1, 1, 0];
+var CUBE_STRIP = [1, 1, 1,  -1, 1, 1,   1, -1, 1,  -1, -1, 1,  -1, -1, -1,  -1, 1, 1,  -1, 1, -1,
+                  1, 1, 1,   1, 1, -1,  1, -1, 1,   1, -1, -1, -1, -1, -1,   1, 1, -1, -1, 1, -1];
+
 // Key light for specular highlights, in view space (upper left, towards viewer).
 var LIGHT_DIR = glm.vec3.normalize(glm.vec3.create(), [-0.45, 0.6, 0.66]);
 var SHADOW_RES = 2048;
+// AO samples per frame are limited so one frame draws at most about this many
+// vertices: huge structures (a ribosome as atoms) refine over more frames
+// instead of stalling the GPU, which browsers treat as a lost context.
+var VERTEX_BUDGET = 30e6;
 var Select = require("./select");
 var parseColor = Select.parseColor;
 
@@ -85,6 +96,8 @@ module.exports = function (canvas, resolution, aoResolution) {
             progDisplayQuad;
 
         var ext;
+        var instancing = null;
+        var sceneVertices = 0;  // vertices drawn by one pass over the scene
 
         var sampleCount = 0,
             colorRendered = false,
@@ -97,6 +110,15 @@ module.exports = function (canvas, resolution, aoResolution) {
         }
 
         var lastView = null;
+        // The studio floor line and molecule height (texture units), or null.
+        self.getFloorLine = function(view) {
+            return floorLine(view);
+        }
+
+        self.getSceneVertices = function() {
+            return sceneVertices;
+        }
+
         self.getAOProgress = function() {
             return lastView ? Math.min(1, sampleCount / maxSamples(lastView)) : 0;
         }
@@ -119,6 +141,8 @@ module.exports = function (canvas, resolution, aoResolution) {
                 "EXT_frag_depth",
                 "WEBGL_depth_texture",
             ]);
+            // Optional: draws each atom / bond once instead of per vertex.
+            instancing = gl.getExtension("ANGLE_instanced_arrays");
 
             self.createTextures();
 
@@ -159,6 +183,8 @@ module.exports = function (canvas, resolution, aoResolution) {
         }
 
         self.createTextures = function() {
+            // Free the previous set (resizes and exports call this again).
+            [tRandRotColor, tRandRotDepth, fbRandRot, tSceneColor, tSceneNormal, tSceneDepth, fbSceneColor, fbSceneNormal, tAccumulator, tAccumulatorOut, fbAccumulator, tAO, fbAO, tFXAA, tFXAAOut, fbFXAA, tDOF, fbDOF, tSurfColor, tSurfNormal, tSurfDepth, fbSurfColor, fbSurfNormal, tSurfAcc, tSurfAccOut, fbSurfAccumulator, tRandRotDepthAll, fbRandRotAll, tShadowMapColor, tShadowMap, fbShadowMap, tShadow, fbShadow, tPickColor, tPickDepth, fbPick].forEach(function(o) { if (o) o.destroy(); });
             // fbRandRot
             tRandRotColor = new webgl.Texture(gl, 0, null, aoResolution, aoResolution);
 
@@ -255,121 +281,107 @@ module.exports = function (canvas, resolution, aoResolution) {
         }
 
 
+        // A renderable drawing `shape` (aImposter vertices) once per instance,
+        // with per-instance attributes {name: [size, Float32Array]}. Uses
+        // instancing when available; otherwise expands the data per vertex.
+        function instances(program, shape, strip, count, perInstance) {
+            var verts = shape.length / 3;
+            var attribs = {aImposter: {buffer: new webgl.GLBuffer(gl), size: 3, divisor: 0}};
+            if (instancing) {
+                attribs.aImposter.buffer.set(new Float32Array(strip));
+                for (var name in perInstance) {
+                    attribs[name] = {buffer: new webgl.GLBuffer(gl), size: perInstance[name][0], divisor: 1};
+                    attribs[name].buffer.set(perInstance[name][1]);
+                }
+                var inst = new webgl.InstancedRenderable(gl, program, attribs, strip.length / 3, count, instancing,
+                                                         gl.TRIANGLE_STRIP);
+                inst.instances = count;
+                inst.vertices = count * strip.length / 3;
+                return inst;
+            }
+            var imposter = new Float32Array(shape.length * count);
+            for (var i = 0; i < count; i++) imposter.set(shape, i * shape.length);
+            attribs.aImposter.buffer.set(imposter);
+            for (var name in perInstance) {
+                var size = perInstance[name][0], data = perInstance[name][1];
+                var out = new Float32Array(size * verts * count);
+                for (var i = 0; i < count; i++) {
+                    for (var v = 0; v < verts; v++) {
+                        for (var c = 0; c < size; c++) out[(i * verts + v) * size + c] = data[i * size + c];
+                    }
+                }
+                attribs[name] = {buffer: new webgl.GLBuffer(gl), size: size};
+                attribs[name].buffer.set(out);
+            }
+            var expanded = new webgl.Renderable(gl, program, attribs, verts * count / 3);
+            expanded.instances = count;
+            expanded.vertices = count * verts;
+            return expanded;
+        }
+
+        // AO samples that fit the per-frame vertex budget (at least one).
+        function samplesPerFrame(wanted) {
+            return Math.max(1, Math.min(wanted, Math.floor(VERTEX_BUDGET / Math.max(1, sceneVertices))));
+        }
+
         self.setSystem = function(newSystem, view) {
 
             system = newSystem;
 
-            function make6(arr) {
-                var out = [];
-                for (var i = 0; i < 6; i++) {
-                    out.push.apply(out, arr);
-                }
-                return out;
+            // Release the previous geometry (large structures use a lot of GPU memory).
+            [rAtoms, rBonds, rCartoon, rSurface, rCell].forEach(webgl.destroy);
+            rAtoms = rBonds = rCartoon = rSurface = rCell = null;
+
+            // Atoms: one screen-aligned quad per atom.
+            var n = 0;
+            for (var i = 0; i < system.atoms.length; i++) {
+                if (!system.atoms[i].hidden) n++;
             }
-
-            function make36(arr) {
-                var out = [];
-                for (var i = 0; i < 36; i++) {
-                    out.push.apply(out, arr);
-                }
-                return out;
-            }
-
-            // Atoms
-            var attribs = webgl.buildAttribs(gl, {
-                aImposter: 3, aPosition: 3, aRadius: 1, aColor: 3, aMetal: 1, aScale: 1
-            });
-
-            var imposter = [];
-            var position = [];
-            var radius = [];
-            var color = [];
-            var metal = [];
-            var scale = [];
-
+            var aPosition = new Float32Array(3 * n), aRadius = new Float32Array(n), aColor = new Float32Array(3 * n),
+                aMetal = new Float32Array(n), aScale = new Float32Array(n);
+            var k = 0;
             for (var i = 0; i < system.atoms.length; i++) {
                 var a = system.atoms[i];
                 if (a.hidden) continue;
-                imposter.push.apply(imposter, QUAD);
-                position.push.apply(position, make6([a.x, a.y, a.z]));
-                radius.push.apply(radius, make6([view.elements[a.symbol].radius]));
                 var c = a.displayColor || view.elements[a.symbol].color;
-                color.push.apply(color, make6([c[0], c[1], c[2]]));
-                metal.push.apply(metal, make6([consts.isMetal(a.symbol) ? 1 : 0]));
-                scale.push.apply(scale, make6([a.highlight ? view.highlightScale : 1]));
+                aPosition[3 * k] = a.x; aPosition[3 * k + 1] = a.y; aPosition[3 * k + 2] = a.z;
+                aRadius[k] = view.elements[a.symbol].radius;
+                aColor[3 * k] = c[0]; aColor[3 * k + 1] = c[1]; aColor[3 * k + 2] = c[2];
+                aMetal[k] = consts.isMetal(a.symbol) ? 1 : 0;
+                // Residues modeled by their trace atom only (CA- or P-only chains)
+                // are drawn as one residue-sized sphere, so coarse models read
+                // as solid molecules.
+                var coarse = a.polymer && a.residue && a.residue.list.length === 1 ? 2.3 : 1;
+                aScale[k] = (a.highlight ? view.highlightScale : 1) * coarse;
+                k++;
             }
+            rAtoms = instances(progAtoms, QUAD, QUAD_STRIP, n, {
+                aPosition: [3, aPosition], aRadius: [1, aRadius], aColor: [3, aColor], aMetal: [1, aMetal], aScale: [1, aScale]
+            });
 
-            attribs.aImposter.buffer.set(new Float32Array(imposter));
-            attribs.aPosition.buffer.set(new Float32Array(position));
-            attribs.aRadius.buffer.set(new Float32Array(radius));
-            attribs.aColor.buffer.set(new Float32Array(color));
-            attribs.aMetal.buffer.set(new Float32Array(metal));
-            attribs.aScale.buffer.set(new Float32Array(scale));
-
-            var count = imposter.length / 9;
-
-            rAtoms = new webgl.Renderable(gl, progAtoms, attribs, count);
-
-            // Bonds
-
-            if (view.bonds) {
-
-                rBonds = null;
-
-                if (system.bonds.length > 0) {
-
-                    var attribs = webgl.buildAttribs(gl, {
-                        aImposter: 3,
-                        aPosA: 3,
-                        aPosB: 3,
-                        aRadA: 1,
-                        aRadB: 1,
-                        aColA: 3,
-                        aColB: 3,
-                        aMetA: 1,
-                        aMetB: 1
-                    })
-
-                    var imposter = [];
-                    var posa = [];
-                    var posb = [];
-                    var rada = [];
-                    var radb = [];
-                    var cola = [];
-                    var colb = [];
-                    var meta = [];
-                    var metb = [];
-
-                    for (var i = 0; i < system.bonds.length; i++) {
-                        var b = system.bonds[i];
-                        if (b.cutoff > view.bondThreshold) break;
-                        imposter.push.apply(imposter, cube.position);
-                        posa.push.apply(posa, make36([b.posA.x, b.posA.y, b.posA.z]));
-                        posb.push.apply(posb, make36([b.posB.x, b.posB.y, b.posB.z]));
-                        rada.push.apply(rada, make36([b.radA]));
-                        radb.push.apply(radb, make36([b.radB]));
-                        cola.push.apply(cola, make36([b.colA.r, b.colA.g, b.colA.b]));
-                        colb.push.apply(colb, make36([b.colB.r, b.colB.g, b.colB.b]));
-                        meta.push.apply(meta, make36([b.metA]));
-                        metb.push.apply(metb, make36([b.metB]));
-                    }
-
-                    attribs.aImposter.buffer.set(new Float32Array(imposter));
-                    attribs.aPosA.buffer.set(new Float32Array(posa));
-                    attribs.aPosB.buffer.set(new Float32Array(posb));
-                    attribs.aRadA.buffer.set(new Float32Array(rada));
-                    attribs.aRadB.buffer.set(new Float32Array(radb));
-                    attribs.aColA.buffer.set(new Float32Array(cola));
-                    attribs.aColB.buffer.set(new Float32Array(colb));
-                    attribs.aMetA.buffer.set(new Float32Array(meta));
-                    attribs.aMetB.buffer.set(new Float32Array(metb));
-
-                    var count = imposter.length / 9;
-
-                    rBonds = new webgl.Renderable(gl, progBonds, attribs, count);
-
+            // Bonds: one box per bond, between atom index pairs.
+            rBonds = null;
+            var bonds = system.bonds;
+            if (view.bonds && bonds && bonds.count > 0) {
+                var m = bonds.count;
+                var aPosA = new Float32Array(3 * m), aPosB = new Float32Array(3 * m), aRadA = new Float32Array(m),
+                    aRadB = new Float32Array(m), aColA = new Float32Array(3 * m), aColB = new Float32Array(3 * m),
+                    aMetA = new Float32Array(m), aMetB = new Float32Array(m);
+                for (var i = 0; i < m; i++) {
+                    var p = system.atoms[bonds.a[i]], q = system.atoms[bonds.b[i]];
+                    var ep = view.elements[p.symbol], eq = view.elements[q.symbol];
+                    var cp = p.displayColor || ep.color, cq = q.displayColor || eq.color;
+                    aPosA[3 * i] = p.x; aPosA[3 * i + 1] = p.y; aPosA[3 * i + 2] = p.z;
+                    aPosB[3 * i] = q.x; aPosB[3 * i + 1] = q.y; aPosB[3 * i + 2] = q.z;
+                    aRadA[i] = ep.radius; aRadB[i] = eq.radius;
+                    aColA[3 * i] = cp[0]; aColA[3 * i + 1] = cp[1]; aColA[3 * i + 2] = cp[2];
+                    aColB[3 * i] = cq[0]; aColB[3 * i + 1] = cq[1]; aColB[3 * i + 2] = cq[2];
+                    aMetA[i] = consts.isMetal(p.symbol) ? 1 : 0; aMetB[i] = consts.isMetal(q.symbol) ? 1 : 0;
                 }
-
+                rBonds = instances(progBonds, cube.position, CUBE_STRIP, m, {
+                    aPosA: [3, aPosA], aPosB: [3, aPosB], aRadA: [1, aRadA], aRadB: [1, aRadB],
+                    aColA: [3, aColA], aColB: [3, aColB], aMetA: [1, aMetA], aMetB: [1, aMetB]
+                });
             }
 
             // Cartoon and molecular surface (triangle meshes)
@@ -377,6 +389,8 @@ module.exports = function (canvas, resolution, aoResolution) {
             rCartoon = view.cartoon ? meshRenderable(Cartoon.buildMesh(system, view)) : null;
             rSurface = view.surface ? meshRenderable(Surface.buildMesh(system, view)) : null;
             rCell = view.unitCell && system.cell ? meshRenderable(Cell.buildMesh(system, view)) : null;
+            sceneVertices = rAtoms.vertices + (rBonds ? rBonds.vertices : 0) +
+                [rCartoon, rSurface, rCell].reduce(function(t, r) { return t + (r ? r.vertices : 0); }, 0);
 
         }
 
@@ -390,7 +404,9 @@ module.exports = function (canvas, resolution, aoResolution) {
             attribs.aPosition.buffer.set(mesh.position);
             attribs.aNormal.buffer.set(mesh.normal);
             attribs.aColor.buffer.set(mesh.color);
-            return new webgl.Renderable(gl, progCartoon, attribs, mesh.count / 3);
+            var r = new webgl.Renderable(gl, progCartoon, attribs, mesh.count / 3);
+            r.vertices = mesh.count;
+            return r;
         }
 
         function drawMesh(renderable, shade, projection, viewMat, model, mode) {
@@ -451,7 +467,8 @@ module.exports = function (canvas, resolution, aoResolution) {
                 shadowRendered = true;
                 shadow(view);
             } else {
-                for (var i = 0; i < view.spf; i++) {
+                var spf = samplesPerFrame(view.spf);
+                for (var i = 0; i < spf; i++) {
                     if (sampleCount >= maxSamples(view)) {
                         break;
                     }
@@ -480,7 +497,7 @@ module.exports = function (canvas, resolution, aoResolution) {
                 shadowRendered = true;
                 shadow(view);
             }
-            var n = Math.min(samples, maxSamples(view));
+            var n = Math.min(samplesPerFrame(samples), maxSamples(view));
             var toView = glm.mat4.invert(glm.mat4.create(), view.rotation);
             for (var i = 0; i < n; i++) {
                 sample(view, glm.mat4.multiply(glm.mat4.create(), aoRotation(i, true), toView));
@@ -500,6 +517,7 @@ module.exports = function (canvas, resolution, aoResolution) {
             var model = glm.mat4.create();
             glm.mat4.translate(model, model, [0, 0, -range/2]);
             glm.mat4.multiply(model, model, view.rotation);
+            setClip(view, view.rotation);
             progAtoms.setUniform("uProjection", "Matrix4fv", false, projection);
             progAtoms.setUniform("uView", "Matrix4fv", false, viewMat);
             progAtoms.setUniform("uModel", "Matrix4fv", false, model);
@@ -609,6 +627,7 @@ module.exports = function (canvas, resolution, aoResolution) {
             var model = glm.mat4.create();
             glm.mat4.translate(model, model, [0, 0, -range/2]);
             glm.mat4.multiply(model, model, v.rotation);
+            setClip(view, v.rotation);
             progAtoms.setUniform("uProjection", "Matrix4fv", false, projection);
             progAtoms.setUniform("uView", "Matrix4fv", false, viewMat);
             progAtoms.setUniform("uModel", "Matrix4fv", false, model);
@@ -755,6 +774,74 @@ module.exports = function (canvas, resolution, aoResolution) {
         }
 
         // Front and back of the drawn structure in normalized depth, for fog.
+        // Cutaway plane for a pass whose rotation is `rotation`: facing the main
+        // camera (view.rotation), so the front of the structure is removed down
+        // to view.cutaway (0: nothing, 0.5: through the center, 1: everything).
+        // The cut plane's normal in model space: the camera axis, or a fixed
+        // axis of the molecule (so rotating shows the cut from the side).
+        function clipNormal(view) {
+            var axis = view.cutawayAxis;
+            if (axis === "x") return [1, 0, 0];
+            if (axis === "y") return [0, 1, 0];
+            if (axis === "z") return [0, 0, 1];
+            var m = view.rotation;
+            return [m[2], m[6], m[10]];                    // camera axis in model space
+        }
+
+        function setClip(view, rotation) {
+            var on = view.cutaway > 0 ? 1.0 : 0.0;
+            var n = clipNormal(view);
+            var r = rotation;
+            var nr = [r[0] * n[0] + r[4] * n[1] + r[8] * n[2],
+                      r[1] * n[0] + r[5] * n[1] + r[9] * n[2],
+                      r[2] * n[0] + r[6] * n[1] + r[10] * n[2]];
+            var radius = range / 2;
+            var plane = [nr[0], nr[1], nr[2], radius * (1 - 2 * Math.min(1, Math.max(0, view.cutaway || 0)))];
+            [progAtoms, progBonds, progCartoon].forEach(function(p) {
+                p.setUniform("uClip", "4fv", plane);
+                p.setUniform("uClipOn", "1f", on);
+            });
+            progCartoon.setUniform("uClipOffset", "1f", range / 2);
+        }
+
+        // Where the studio floor meets the molecule: the lowest point of what is
+        // drawn, in the frame's texture coordinates, plus the molecule's height.
+        // Recomputed only when the view or the structure changes.
+        var floorCache = {key: null, value: null};
+        function floorLine(view) {
+            if (!(view.floor > 0) || !system) return null;
+            var m = view.rotation;
+            var key = [Array.prototype.join.call(m), view.zoom, view.translation.x, view.translation.y,
+                       view.atomScale, view.relativeAtomScale, view.cartoon, view.surface, view.surfaceProbe,
+                       system.version || 0, system.atoms.length, rAtoms ? rAtoms.instances : 0].join();
+            if (floorCache.key === key) return floorCache.value;
+            var lo = Infinity, hi = -Infinity, left = Infinity, right = -Infinity;
+            var pad = view.surface ? (view.surfaceProbe || 1.4) + 1.9 : view.cartoon ? 1.4 : 0;
+            for (var i = 0; i < system.atoms.length; i++) {
+                var a = system.atoms[i];
+                // Drawn atoms; for cartoons the backbone trace; for surfaces the
+                // atoms they wrap.
+                var traced = view.cartoon && a.polymer && (a.name === "CA" || a.name === "P");
+                var wrapped = view.surface && (a.polymer || view.surfaceAtoms === "all");
+                if (a.hidden && !traced && !wrapped) continue;
+                var r = a.hidden ? 0 : 2.5 * view.atomScale * (1 + (view.elements[a.symbol].radius - 1) * view.relativeAtomScale);
+                var y = m[1] * a.x + m[5] * a.y + m[9] * a.z;
+                var x = m[0] * a.x + m[4] * a.y + m[8] * a.z;
+                var extent = a.hidden ? pad : Math.max(r, view.surface ? pad : 0);
+                if (y - extent < lo) lo = y - extent;
+                if (y + extent > hi) hi = y + extent;
+                if (x - extent < left) left = x - extent;
+                if (x + extent > right) right = x + extent;
+            }
+            var rect = View.getRect(view);
+            var span = rect.top - rect.bottom;
+            var wspan = rect.right - rect.left;
+            floorCache = {key: key, value: lo < Infinity ?
+                {y: (lo - rect.bottom) / span, height: (hi - lo) / span,
+                 x: ((left + right) / 2 - rect.left) / wspan, width: (right - left) / wspan} : null};
+            return floorCache.value;
+        }
+
         function depthExtent(view) {
             var m = view.rotation;
             var zmin = Infinity, zmax = -Infinity;
@@ -831,6 +918,22 @@ module.exports = function (canvas, resolution, aoResolution) {
             progAO.setUniform("uTonemap", "1f", view.tonemap ? 1 : 0);
             progAO.setUniform("uOutlineWidth", "1f", view.outlineWidth);
             progAO.setUniform("uOutlineColor", "3fv", parseColor(view.outlineColor, [0, 0, 0]));
+            progAO.setUniform("uOutlineEdges", "1f", view.outlineMode === "molecules" ? 1.0 : 0.0);
+            // Cutaway fill light: the plane in the main view's centered frame.
+            var cn = clipNormal(view), R = view.rotation;
+            var cr = [R[0] * cn[0] + R[4] * cn[1] + R[8] * cn[2], R[1] * cn[0] + R[5] * cn[1] + R[9] * cn[2],
+                      R[2] * cn[0] + R[6] * cn[1] + R[10] * cn[2]];
+            var crect = View.getRect(view);
+            progAO.setUniform("uCut", "4fv", [cr[0], cr[1], cr[2], (range / 2) * (1 - 2 * Math.min(1, Math.max(0, view.cutaway || 0)))]);
+            progAO.setUniform("uCutLight", "1f", view.cutaway > 0 ? (view.cutawayLight === undefined ? 0.5 : view.cutawayLight) : 0.0);
+            progAO.setUniform("uRect", "4fv", [crect.left, crect.bottom, crect.right, crect.top]);
+            var fl = floorLine(view);
+            progAO.setUniform("uFloor", "1f", fl ? view.floor : 0.0);
+            progAO.setUniform("uFloorReflect", "1f", fl ? (view.floorReflection || 0) : 0.0);
+            progAO.setUniform("uFloorY", "1f", fl ? fl.y : 0.0);
+            progAO.setUniform("uFloorHeight", "1f", fl ? fl.height : 0.0);
+            progAO.setUniform("uFloorX", "1f", fl ? fl.x : 0.5);
+            progAO.setUniform("uFloorWidth", "1f", fl ? fl.width : 1.0);
             rAO.render();
 
             if (view.fxaa > 0) {

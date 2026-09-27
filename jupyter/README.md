@@ -88,9 +88,9 @@ pip install -e .
 ```python
 from ipyspeck import Speck
 
-Speck.from_pdb_id("4HHB")                  # RCSB entry, shown as a cartoon
+Speck.from_pdb_id("4HHB")                  # RCSB entry (mmCIF), shown as a cartoon
 Speck.from_alphafold("Q8W3K0")             # AlphaFold model, colored by confidence
-Speck(data=open("molecule.xyz").read())    # any XYZ / extended XYZ / PDB text
+Speck.from_file("ligand.sdf")              # PDB, mmCIF, SDF / MOL or XYZ, also .gz
 ```
 
 Every setting below is a constructor argument and can also be changed live
@@ -117,7 +117,7 @@ w.ligands = False                 # hide ligands in any view
 ### Looks, lighting and materials
 
 ```python
-w.apply_preset("cover")           # default, matte, glossy, toon, cover, metal, glass
+w.apply_preset("cover")           # default, matte, glossy, toon, cover, metal, glass, goodsell
 w.shadows = 0.6                   # cast shadows from the key light
 w.fog = 0.4                       # depth cue toward fogColor
 w.rim = 0.3                       # rim light along silhouettes
@@ -128,6 +128,23 @@ w.autoRotate = True               # turntable spin (also a toolbar toggle)
 ```
 
 The looks are also in the toolbar's sparkle menu.
+
+### Studio floor, illustration style and cutaway
+
+```python
+w.floor, w.floorReflection = 0.9, 0.3     # soft contact shadow and reflection (off by default)
+w.apply_preset("goodsell")                # Goodsell-style illustration: flat colors per chain
+w.atomColor = "type"                      # atoms by chain, entity, type (protein / RNA), ss, rainbow
+w.palette = "colorblind"                  # goodsell, pastel, colorblind, viridis, grays, default
+w.cutaway = 0.5                           # slice off the front half to look inside
+w.cutawayAxis = "z"                       # plane facing the camera ("view") or fixed across x / y / z
+w.cutawayLight = 0.6                      # light entering through the cut, for the inside
+```
+
+The floor works on any background (it only adds shadow and reflection). `outlineMode="molecules"`
+outlines only the edges between molecules, as in illustrations. Cut atoms and surfaces are capped,
+so capsids and ribosomes open up like a cross-section; a fixed axis keeps the cut in place on the
+molecule while you rotate it.
 
 ### Element colors
 
@@ -178,14 +195,35 @@ Exports render in the browser after the cell finishes; the file appears a moment
 ### Structures from Python
 
 ```python
-Speck.from_file("structure.pdb")
+Speck.from_file("structure.cif")   # .pdb/.ent, .cif/.mmcif, .sdf/.mol, .xyz/.extxyz, optionally .gz
+Speck.from_pdb_id("4V6X")           # a ribosome: 237,685 atoms, only available as mmCIF
+Speck.from_pdb_id("1STM", assembly=1)   # biological assembly: the whole 60-copy virus capsid
+Speck.from_mdtraj(mdtraj.load("run.xtc", top="system.gro"), stride=10)   # MD trajectory
+Speck.from_mdanalysis(u.select_atoms("protein"), step=10)                # MDAnalysis Universe / AtomGroup
 Speck.from_ase(atoms)              # ase.Atoms or a list (trajectory); periodic cells shown
-Speck.from_rdkit(mol)              # needs 3D coordinates (AllChem.EmbedMolecule)
+Speck.from_rdkit(mol)              # needs 3D coordinates (AllChem.EmbedMolecule); keeps its bonds
 Speck.from_pymatgen(structure)     # Structure (with its cell) or Molecule
 ```
 
-Multi-frame XYZ and multi-model PDB data are trajectories: set `w.frame`, or display
-`w.trajectory_controls()` for a play button and slider.
+The format is detected from the text, so `Speck(data=...)` accepts any of them. mmCIF, the
+PDB's standard format, covers entries that PDB files cannot hold (over 99,999 atoms or 62
+chains, multi-character chain IDs, five-character ligand codes); `from_pdb_id` downloads it
+by default (`format="pdb"` for the legacy file). Bonds listed in the file (PDB CONECT,
+mmCIF `_struct_conn`, SDF / MOL bond tables) are always drawn, including long metal bonds.
+
+Multi-frame XYZ, multi-model PDB or mmCIF and multi-conformer SDF data are trajectories: set
+`w.frame`, or display `w.trajectory_controls()` for a play button and slider. MD trajectories
+(`from_mdtraj`, `from_mdanalysis`, or `w.set_trajectory(coords)` with an array of shape
+(frames, atoms, 3) in Å) keep residues and chains, so cartoons follow the motion; their frames
+travel to the browser as binary coordinates rather than repeated text.
+
+Large structures stay interactive: ribosomes and capsids (200k+ atoms) load in the background,
+render as atoms, cartoons or surfaces at full frame rate, and structure data reaches the
+browser gzipped.
+
+If Jupyter serves an older copy of the browser extension than the installed package (for
+example one left in `~/.local/share/jupyter` by an earlier `pip install --user`), ipyspeck
+warns with the folder to remove; restart Jupyter afterwards.
 
 See `example/showcase.ipynb` for a tour of every feature.
 
@@ -258,6 +296,11 @@ Rendered with ipyspeck (see `example/showcase.ipynb` for the settings behind the
 </tr>
 <tr>
 <td align="center" width="33%"><a href="https://github.com/denphi/speck/blob/master/jupyter/example/gallery/ubiquitin_surface.ipynb"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/ubiquitin_surface.jpg" width="100%"/></a><br/><sub>Ubiquitin surface (1UBQ)</sub></td>
+<td align="center" width="33%"><a href="https://github.com/denphi/speck/blob/master/jupyter/example/gallery/ribosome.ipynb"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/ribosome.jpg" width="100%"/></a><br/><sub>Human 80S ribosome, 237,685 atoms (4V6X)</sub></td>
+<td align="center" width="33%"><a href="https://github.com/denphi/speck/blob/master/jupyter/example/gallery/capsid.ipynb"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/capsid.jpg" width="100%"/></a><br/><sub>Virus capsid, all 60 copies (1STM)</sub></td>
+</tr>
+<tr>
+<td align="center" width="33%"><a href="https://github.com/denphi/speck/blob/master/jupyter/example/gallery/ms2_capsid.ipynb"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/ms2_capsid.jpg" width="100%"/></a><br/><sub>Bacteriophage MS2 capsid, 180 copies (2MS2)</sub></td>
 </tr>
 </table>
 
@@ -268,6 +311,21 @@ Rendered with ipyspeck (see `example/showcase.ipynb` for the settings behind the
 <td align="center" width="33%"><a href="https://github.com/denphi/speck/blob/master/jupyter/example/gallery/nucleosome.ipynb"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/nucleosome.jpg" width="100%"/></a><br/><sub>Nucleosome (1KX5)</sub></td>
 <td align="center" width="33%"><a href="https://github.com/denphi/speck/blob/master/jupyter/example/gallery/trna.ipynb"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/trna.jpg" width="100%"/></a><br/><sub>Transfer RNA (1EHZ)</sub></td>
 <td align="center" width="33%"><a href="https://github.com/denphi/speck/blob/master/jupyter/example/gallery/g_quadruplex.ipynb"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/g_quadruplex.jpg" width="100%"/></a><br/><sub>G-quadruplex with K⁺ (1KF1)</sub></td>
+</tr>
+</table>
+
+### Studio floor, illustration and cutaway
+
+<table>
+<tr>
+<td align="center" width="33%"><a href="https://github.com/denphi/speck/blob/master/jupyter/example/gallery/floor_hemoglobin.ipynb"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/floor_hemoglobin.jpg" width="100%"/></a><br/><sub>Hemoglobin on the studio floor (4HHB)</sub></td>
+<td align="center" width="33%"><a href="https://github.com/denphi/speck/blob/master/jupyter/example/gallery/floor_gold.ipynb"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/floor_gold.jpg" width="100%"/></a><br/><sub>Gold–thiolate cluster on the studio floor</sub></td>
+<td align="center" width="33%"><a href="https://github.com/denphi/speck/blob/master/jupyter/example/gallery/goodsell_hemoglobin.ipynb"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/goodsell_hemoglobin.jpg" width="100%"/></a><br/><sub>Hemoglobin, Goodsell style (4HHB)</sub></td>
+</tr>
+<tr>
+<td align="center" width="33%"><a href="https://github.com/denphi/speck/blob/master/jupyter/example/gallery/goodsell_capsid.ipynb"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/goodsell_capsid.jpg" width="100%"/></a><br/><sub>Virus capsid, Goodsell style (1STM)</sub></td>
+<td align="center" width="33%"><a href="https://github.com/denphi/speck/blob/master/jupyter/example/gallery/goodsell_ribosome.ipynb"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/goodsell_ribosome.jpg" width="100%"/></a><br/><sub>Ribosome large subunit, Goodsell style (1FFK)</sub></td>
+<td align="center" width="33%"><a href="https://github.com/denphi/speck/blob/master/jupyter/example/gallery/cutaway_capsid.ipynb"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/cutaway_capsid.jpg" width="100%"/></a><br/><sub>Virus capsid, cut open (1STM)</sub></td>
 </tr>
 </table>
 

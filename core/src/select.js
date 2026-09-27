@@ -13,7 +13,7 @@
 //   ligands  true for non-polymer, non-water residues
 // An empty or missing selection highlights nothing.
 
-var WATER = {HOH: 1, WAT: 1, DOD: 1, H2O: 1, TIP: 1, TIP3: 1, SOL: 1};
+var WATER = {HOH: 1, WAT: 1, DOD: 1, H2O: 1, TIP: 1, TIP3: 1, TIP4: 1, TIP5: 1, T3P: 1, T4P: 1, SPC: 1, SPCE: 1, SOL: 1};
 
 // '#rrggbb' (or an [r, g, b] array) to normalized RGB.
 var parseColor = module.exports.parseColor = function(c, fallback) {
@@ -105,8 +105,8 @@ module.exports.apply = function(s, view) {
     for (var i = 0; i < s.atoms.length; i++) {
         var a = s.atoms[i];
         if (a.highlight && a.residue) a.residue.highlight = true;
-        var base = view.elements[a.symbol].color;
+        var base = a.schemeColor || view.elements[a.symbol].color;
         var c = adjustColor(base, a.highlight, view);
-        a.displayColor = c === base ? undefined : c;
+        a.displayColor = c === base && !a.schemeColor ? undefined : c;
     }
 };

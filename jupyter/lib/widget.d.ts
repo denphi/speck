@@ -9,6 +9,8 @@ export declare class SpeckModel extends DOMWidgetModel {
         _view_module: any;
         _view_module_version: any;
         data: string;
+        _data: null;
+        _trajectory: null;
         toolbar: boolean;
         camera: {};
         nframes: number;
@@ -24,6 +26,11 @@ export declare class SpeckModel extends DOMWidgetModel {
 export declare class SpeckView extends DOMWidgetView {
     private viewer;
     private applyingCamera;
+    private text;
+    private textTicket;
+    private decodeData;
+    private trajectory;
+    private reloadData;
     render(): void;
     remove(): any;
     handleCustomMessage(message: any): void;

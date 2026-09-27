@@ -192,3 +192,147 @@
     padding: 9px 14px 9px 30px;
   }
 }
+
+/* Dismissable message, e.g. Python and browser versions differ */
+.ipyspeck-notice {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  padding: 8px 32px 8px 12px;
+  border-radius: 6px;
+  background: #fff4d6;
+  border: 1px solid #e6c46a;
+  color: #5a4300;
+  font: 12px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  z-index: 3;
+}
+
+.ipyspeck-notice-close {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* Loading panel: the steps of a large load */
+.ipyspeck-progress {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(340px, calc(100% - 32px));
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.16);
+  font: 12px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  color: #1c2130;
+  z-index: 3;
+}
+
+.ipyspeck-progress-step {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  column-gap: 8px;
+  padding: 3px 0;
+}
+
+.ipyspeck-progress-icon {
+  grid-row: 1 / span 2;
+  width: 12px;
+  height: 12px;
+  margin-top: 2px;
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+.ipyspeck-progress-step.done .ipyspeck-progress-icon {
+  background: #2ea44f;
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M2.5 6.2 5 8.6 9.6 3.6' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>") center / contain no-repeat;
+          mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M2.5 6.2 5 8.6 9.6 3.6' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>") center / contain no-repeat;
+}
+
+.ipyspeck-progress-step.active .ipyspeck-progress-icon {
+  border: 2px solid rgba(31, 111, 235, 0.25);
+  border-top-color: #1f6feb;
+  animation: ipyspeck-spin 0.8s linear infinite;
+}
+
+.ipyspeck-progress-step.failed .ipyspeck-progress-icon {
+  background: #d1242f;
+}
+
+.ipyspeck-progress-step.done .ipyspeck-progress-label {
+  color: #57606a;
+}
+
+.ipyspeck-progress-step.active .ipyspeck-progress-label {
+  font-weight: 600;
+}
+
+.ipyspeck-progress-detail {
+  grid-column: 2;
+  color: #8a91a0;
+  font-size: 11px;
+}
+
+.ipyspeck-progress-bar {
+  grid-column: 2;
+  height: 3px;
+  margin-top: 4px;
+  border-radius: 2px;
+  background: rgba(31, 111, 235, 0.15);
+  overflow: hidden;
+}
+
+.ipyspeck-progress-bar > div {
+  height: 100%;
+  background: #1f6feb;
+  transition: width 0.2s;
+}
+
+.ipyspeck-progress-bar.indeterminate > div {
+  width: 35%;
+  animation: ipyspeck-slide 1.2s ease-in-out infinite;
+}
+
+.ipyspeck-progress-error {
+  margin-top: 6px;
+  color: #d1242f;
+}
+
+/* Small label while ambient occlusion refines after a load */
+.ipyspeck-progress-pill {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.85);
+  color: #57606a;
+  font: 11px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  pointer-events: none;
+}
+
+@keyframes ipyspeck-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes ipyspeck-slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(290%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ipyspeck-progress-step.active .ipyspeck-progress-icon,
+  .ipyspeck-progress-bar.indeterminate > div {
+    animation: none;
+  }
+}

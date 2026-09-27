@@ -1,3 +1,4 @@
+import gzip
 import io
 import json
 import os
@@ -5,11 +6,17 @@ import re
 import urllib.request
 import uuid
 
+import warnings
+
 import ipywidgets as widgets
-from traitlets import Unicode, Bool, Float, Int, Enum, Dict, observe, validate, TraitError
+from traitlets import Unicode, Bool, Bytes, Float, Int, Enum, Dict, observe, validate, TraitError
+
+from . import _formats
+from ._version import __version__
 
 
-_MESH_SCHEMES = ('ss', 'chain', 'rainbow', 'plddt')
+_MESH_SCHEMES = ('ss', 'chain', 'entity', 'type', 'rainbow', 'plddt')
+_PALETTES = ('default', 'goodsell', 'pastel', 'colorblind', 'viridis', 'grays')
 _HEX = re.compile(r'^#[0-9a-fA-F]{6}$')
 _COLOR_SCHEMES = ('speck', 'jmol', 'rasmol', 'newcpk')
 _SELECTION_KEYS = ('index', 'chain', 'resName', 'resSeq', 'name', 'element', 'ligands')
@@ -20,7 +27,10 @@ PRESETS = {
     'default': dict(ao=0.75, brightness=0.5, atomShade=0.5, bondShade=0.5, cartoonShade=0.2,
                     surfaceShade=0.1, outline=0.0, outlineWidth=1.0, outlineColor='#000000',
                     specular=0.0, gloss=0.5, metallic=0.0, metallicAtoms='all', shadows=0.0,
-                    rim=0.0, fog=0.0, saturation=1.0, tonemap=False, dofStrength=0.0),
+                    rim=0.0, fog=0.0, fogColor='#ffffff', saturation=1.0, tonemap=False, dofStrength=0.0,
+                    surfaceOpacity=1.0, surfaceColor='element', atomColor='element', palette='default',
+                    water=True,
+                    outlineMode='depth'),
     'matte': dict(ao=0.9, brightness=0.55),
     'glossy': dict(specular=0.6, gloss=0.65, rim=0.2, tonemap=True),
     'toon': dict(ao=0.3, outline=1.0, outlineWidth=1.5, atomShade=0.3, cartoonShade=0.1),
@@ -31,24 +41,66 @@ PRESETS = {
                   tonemap=True),
     'glass': dict(surface=True, surfaceOpacity=0.35, surfaceColor='#e8e4dc', specular=0.4,
                   gloss=0.7, cartoon=True),
+    # After David Goodsell's illustrations: space-filling atoms in flat
+    # pastel colors per chain, outlined between molecules.
+    'goodsell': dict(ao=0.3, brightness=0.82, atomShade=0.0, outline=1.0, outlineWidth=0.9, fog=0.4,
+                     fogColor='#000000',
+                     outlineColor='#141414', outlineMode='molecules', atomColor='chain',
+                     palette='goodsell', cartoon=False, surface=False, bonds=False, water=False,
+                     atomScale=0.7, relativeAtomScale=1.0),
 }
 
 
-def _count_frames(data):
-    """Number of frames in XYZ (repeated blocks) or PDB (MODEL records) text."""
-    if re.search(r'^(ATOM  |HETATM)', data, re.M):
-        return max(1, len(re.findall(r'^ENDMDL', data, re.M)))
-    lines = data.split('\n')
-    count, at = 0, 0
-    while at < len(lines):
-        try:
-            natoms = int(lines[at].strip())
-        except ValueError:
-            break
-        if natoms <= 0 or at + natoms + 2 > len(lines):
-            break
-        count, at = count + 1, at + natoms + 2
-    return max(1, count)
+def _rcsb_url(pdb_id, format='cif', assembly=None):
+    """Download URL of an RCSB entry or of one of its biological assemblies."""
+    if format not in ('cif', 'pdb'):
+        raise ValueError("format must be 'cif' or 'pdb'")
+    if assembly is None:
+        return 'https://files.rcsb.org/download/%s.%s' % (pdb_id.upper(), format)
+    if format != 'cif':
+        raise ValueError("assemblies are available as mmCIF only (format='cif')")
+    return 'https://files.rcsb.org/download/%s-assembly%d.cif' % (pdb_id.upper(), int(assembly))
+
+
+_frontend_checked = False
+
+
+def _check_frontend():
+    """Warn (once) when Jupyter will serve a browser extension of another
+    ipyspeck version than this Python package, e.g. an old copy left in
+    ~/.local/share/jupyter by an earlier `pip install --user`. Jupyter uses
+    the first copy on its data path, so a stale one hides the new version."""
+    global _frontend_checked
+    if _frontend_checked:
+        return
+    _frontend_checked = True
+    try:
+        from jupyter_core.paths import jupyter_path
+    except ImportError:
+        return
+    stale = []
+    for kind, name, pattern, ui in (
+            ('nbextensions', 'index.js', r'"name":"ipyspeck","version":"([^"]+)"', 'Notebook 6'),
+            ('labextensions', 'package.json', r'"version"\s*:\s*"([^"]+)"', 'JupyterLab / Notebook 7')):
+        for folder in jupyter_path(kind):
+            path = os.path.join(folder, 'ipyspeck', name)
+            if not os.path.isfile(path):
+                continue
+            try:
+                with open(path, encoding='utf-8', errors='replace') as f:
+                    match = re.search(pattern, f.read())
+            except OSError:
+                break
+            version = match.group(1) if match else 'unknown'
+            if version != __version__:
+                stale.append('  %s: ipyspeck %s in %s' % (ui, version, os.path.dirname(path)))
+            break  # the first copy found is the one Jupyter serves
+    if stale:
+        warnings.warn(
+            'ipyspeck %s is installed, but Jupyter will load a different browser extension:\n%s\n'
+            'The viewer will run that older code. Delete (or upgrade) that folder, then restart '
+            'the Jupyter server and reload the page.' % (__version__, '\n'.join(stale)),
+            stacklevel=3)
 
 
 def _extxyz(frames):
@@ -85,9 +137,11 @@ class Speck(widgets.DOMWidget):
     Attributes
     ----------
     data : str
-        Structure as XYZ / extended XYZ or PDB text. PDB input enables cartoon
-        and surface; several frames (XYZ blocks or PDB MODELs) form a
-        trajectory.
+        Structure text: PDB, mmCIF, MDL Molfile / SDF or XYZ / extended XYZ,
+        detected from the content. PDB and mmCIF enable cartoon and surface;
+        bonds listed in the file (CONECT, _struct_conn, Molfile bonds) are
+        always drawn. Several frames (XYZ blocks, PDB or mmCIF models, SDF
+        conformers) form a trajectory.
     toolbar : bool
         Show the toolbar (styles, cartoon / surface / ligand toggles, views,
         colors and PNG snapshot), default(True)
@@ -115,6 +169,19 @@ class Speck(widgets.DOMWidget):
         Blend of atom colors toward white, default(0.5)
     ligands : bool
         Show ligands (non-polymer, non-water PDB residues), default(True)
+    water : bool
+        Show water molecules, default(True)
+    cutaway : float
+        Slice away the front of the structure to show its inside [0 - 1]:
+        0 cuts nothing, 0.5 cuts through the center; the plane faces the
+        camera and cut atoms and surfaces are capped, default(0.0)
+    cutawayAxis : str
+        Cut plane: 'view' (facing the camera) or fixed across the molecule's
+        'x', 'y' or 'z' axis, so rotating shows the cut from the side,
+        default('view')
+    cutawayLight : float
+        Light entering through the cut [0 - 1]: brightens the cut faces and
+        the inside near them, default(0.5)
 
     Colors
 
@@ -124,6 +191,14 @@ class Speck(widgets.DOMWidget):
     atomColors : dict
         Per-element colors on top of the palette, as '#rrggbb' or [r, g, b]
         in 0 - 1, e.g. {"Au": "#ffcc33", "S": [0.9, 0.8, 0.2]}, default({})
+    atomColor : str
+        Atom coloring: 'element', or by residue like cartoons: 'chain',
+        'entity' (every copy of a molecule alike), 'type' (protein / nucleic
+        acid), 'ss', 'rainbow'; heteroatoms stay a shade darker,
+        default('element')
+    palette : str
+        Colors for chain, entity and type coloring: 'default', 'goodsell',
+        'pastel', 'colorblind', 'viridis' or 'grays', default('default')
 
     Highlighting
 
@@ -175,6 +250,15 @@ class Speck(widgets.DOMWidget):
         Outline width (1 = default thickness), default(1.0)
     outlineColor : str
         '#rrggbb' outline color, default('#000000')
+    outlineMode : str
+        'depth' outlines every depth step; 'molecules' only the edges
+        between molecules (colors) and silhouettes, as in illustrations,
+        default('depth')
+    floor : float
+        Studio floor [0 - 1]: a soft contact shadow under the molecule, on
+        any background (0 = off), default(0.0)
+    floorReflection : float
+        Reflection of the molecule in the floor [0 - 1], default(0.3)
     fxaa : int
         Anti-aliasing passes, default(1)
     dofStrength : float
@@ -276,8 +360,10 @@ class Speck(widgets.DOMWidget):
     trajectory_controls()
         Play button and slider linked to frame
     from_file(), from_pdb_id(), from_alphafold(), from_ase(), from_rdkit(),
-    from_pymatgen()
+    from_pymatgen(), from_mdtraj(), from_mdanalysis()
         Create a viewer from a file, a database entry or a Python structure
+    set_trajectory(coordinates)
+        Frames (frames, atoms, 3) for the current structure
     frontview(), topview(), rightview(), center()
         Standard views and fit
     snapshot()
@@ -292,10 +378,15 @@ class Speck(widgets.DOMWidget):
     _model_name = Unicode('SpeckModel').tag(sync=True)
     _view_module = Unicode('ipyspeck').tag(sync=True)
     _model_module = Unicode('ipyspeck').tag(sync=True)
-    _view_module_version = Unicode('^0.8.2').tag(sync=True)
-    _model_module_version = Unicode('^0.8.2').tag(sync=True)
+    _view_module_version = Unicode('^0.8.3').tag(sync=True)
+    _model_module_version = Unicode('^0.8.3').tag(sync=True)
 
-    data = Unicode('').tag(sync=True)
+    data = Unicode('')
+    # `data` reaches the browser gzipped, as a binary buffer (a 28 MB mmCIF
+    # ribosome travels as about 7 MB, without JSON escaping).
+    _data = Bytes(b'').tag(sync=True)
+    # Frames from set_trajectory(): float32 x, y, z of every atom, frame after frame.
+    _trajectory = Bytes(b'').tag(sync=True)
     toolbar = Bool(True).tag(sync=True)
     camera = Dict().tag(sync=True)
 
@@ -312,6 +403,8 @@ class Speck(widgets.DOMWidget):
     # colors
     colorScheme = Enum(_COLOR_SCHEMES, default_value='speck').tag(sync=True)
     atomColors = Dict().tag(sync=True)
+    atomColor = Unicode('element').tag(sync=True)
+    palette = Enum(_PALETTES, default_value='default').tag(sync=True)
 
     # highlighting
     highlight = Dict().tag(sync=True)
@@ -335,6 +428,9 @@ class Speck(widgets.DOMWidget):
     fogColor = Unicode('#ffffff').tag(sync=True)
     saturation = Float(1.0).tag(sync=True)
     tonemap = Bool(False).tag(sync=True)
+    outlineMode = Enum(['depth', 'molecules'], default_value='depth').tag(sync=True)
+    floor = Float(0.0, min=0.0, max=1.0).tag(sync=True)
+    floorReflection = Float(0.3, min=0.0, max=1.0).tag(sync=True)
     fxaa = Int(1, min=0, max=8).tag(sync=True)
     dofStrength = Float(0.0).tag(sync=True)
     dofPosition = Float(0.5).tag(sync=True)
@@ -370,6 +466,10 @@ class Speck(widgets.DOMWidget):
 
     # unit cell and trajectory
     unitCell = Bool(False).tag(sync=True)
+    water = Bool(True).tag(sync=True)
+    cutaway = Float(0.0, min=0.0, max=1.0).tag(sync=True)
+    cutawayAxis = Enum(['view', 'x', 'y', 'z'], default_value='view').tag(sync=True)
+    cutawayLight = Float(0.5, min=0.0, max=1.0).tag(sync=True)
     cellColor = Unicode('#666666').tag(sync=True)
     cellRadius = Float(0.12).tag(sync=True)
     frame = Int(0, min=0).tag(sync=True)
@@ -380,6 +480,7 @@ class Speck(widgets.DOMWidget):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        _check_frontend()
         self._requests = {}
         self.last_image = None
         self.on_msg(self._on_frontend_msg)
@@ -398,6 +499,14 @@ class Speck(widgets.DOMWidget):
             "%s must be one of %s or '#rrggbb'"
             % (proposal['trait'].name, ', '.join(schemes))
         )
+
+    @validate('atomColor')
+    def _valid_atom_color(self, proposal):
+        value = proposal['value']
+        schemes = ('element',) + tuple(s for s in _MESH_SCHEMES if s != 'plddt')
+        if value in schemes or _HEX.match(value):
+            return value
+        raise TraitError("atomColor must be one of %s or '#rrggbb'" % ', '.join(schemes))
 
     @validate('outlineColor', 'fogColor', 'cellColor', 'highlightColor')
     def _valid_hex(self, proposal):
@@ -439,7 +548,9 @@ class Speck(widgets.DOMWidget):
 
     @observe('data')
     def _data_changed(self, change):
-        self.set_trait('nframes', _count_frames(change['new']))
+        self._data = gzip.compress(change['new'].encode('utf-8'), compresslevel=3, mtime=0)
+        self._trajectory = b''   # frames belong to the previous structure
+        self.set_trait('nframes', _formats.count_frames(change['new']))
         if self.frame >= self.nframes:
             self.frame = 0
 
@@ -447,20 +558,24 @@ class Speck(widgets.DOMWidget):
 
     @classmethod
     def from_file(cls, path, **kwargs):
-        """Viewer for a .pdb, .ent, .xyz or .extxyz file (optionally .gz)."""
-        if str(path).endswith('.gz'):
-            import gzip
-            with gzip.open(path, 'rt') as f:
-                data = f.read()
-        else:
-            with open(path) as f:
-                data = f.read()
-        return cls(data=data, **kwargs)
+        """Viewer for a structure file: PDB (.pdb, .ent), mmCIF (.cif,
+        .mmcif), MDL Molfile / SDF (.mol, .sdf, with their bonds) or XYZ /
+        extended XYZ (.xyz, .extxyz), optionally gzipped (.gz). The format is
+        detected from the content."""
+        return cls(data=_formats.read_text(path), **kwargs)
 
     @classmethod
-    def from_pdb_id(cls, pdb_id, **kwargs):
-        """Viewer for an RCSB PDB entry (e.g. "1UBQ"), shown as a cartoon."""
-        url = 'https://files.rcsb.org/download/%s.pdb' % pdb_id.upper()
+    def from_pdb_id(cls, pdb_id, format='cif', assembly=None, **kwargs):
+        """Viewer for an RCSB PDB entry (e.g. "1UBQ"), shown as a cartoon.
+
+        The entry is downloaded as mmCIF, which exists for every entry,
+        including large complexes (ribosomes, viral capsids) that have no PDB
+        file; pass format='pdb' for the legacy PDB file.
+
+        assembly=1 (2, ...) loads that biological assembly instead of the
+        deposited coordinates, e.g. the complete 60-copy capsid of a virus
+        whose file holds a single copy: Speck.from_pdb_id("1STM", assembly=1)."""
+        url = _rcsb_url(pdb_id, format, assembly)
         with urllib.request.urlopen(url) as r:
             data = r.read().decode()
         kwargs.setdefault('cartoon', True)
@@ -480,6 +595,48 @@ class Speck(widgets.DOMWidget):
         return cls(data=data, **kwargs)
 
     @classmethod
+    def from_mdtraj(cls, traj, stride=1, **kwargs):
+        """Viewer for an mdtraj.Trajectory (every `stride`-th frame), shown as a
+        cartoon. The topology keeps residues and chains; the frames are sent
+        as binary coordinates, e.g. mdtraj.load("run.xtc", top="system.gro")."""
+        data, coords, _ = _formats.from_mdtraj(traj, stride)
+        kwargs.setdefault('cartoon', True)
+        w = cls(data=data, **kwargs)
+        w._set_coordinates(coords)
+        return w
+
+    @classmethod
+    def from_mdanalysis(cls, obj, start=None, stop=None, step=None, **kwargs):
+        """Viewer for an MDAnalysis Universe or AtomGroup over
+        trajectory[start:stop:step], shown as a cartoon, e.g.
+        Speck.from_mdanalysis(u.select_atoms("protein"), step=10)."""
+        data, coords, _ = _formats.from_mdanalysis(obj, start, stop, step)
+        kwargs.setdefault('cartoon', True)
+        w = cls(data=data, **kwargs)
+        w._set_coordinates(coords)
+        return w
+
+    def set_trajectory(self, coordinates):
+        """Frames for the current structure: an array of shape (frames, atoms,
+        3) in Angstrom, atoms in the order of `data`. Set `frame` (or use
+        trajectory_controls()) to move through them."""
+        import numpy as np
+        arr = np.asarray(coordinates, dtype='<f4')
+        natoms = _formats.count_atoms(self.data)
+        if arr.ndim != 3 or arr.shape[2] != 3 or arr.shape[1] != natoms:
+            raise ValueError('coordinates must have shape (frames, %d, 3) for this structure, got %s'
+                             % (natoms, arr.shape))
+        self._set_coordinates(_formats.coordinates_bytes(arr))
+
+    def _set_coordinates(self, coords):
+        natoms = _formats.count_atoms(self.data)
+        with self.hold_trait_notifications():
+            self._trajectory = coords
+            self.set_trait('nframes', max(1, len(coords) // (12 * max(1, natoms))))
+            if self.frame >= self.nframes:
+                self.frame = 0
+
+    @classmethod
     def from_ase(cls, atoms, **kwargs):
         """Viewer for an ase.Atoms object or a list of them (trajectory).
         Periodic structures show their unit cell."""
@@ -495,16 +652,16 @@ class Speck(widgets.DOMWidget):
 
     @classmethod
     def from_rdkit(cls, mol, conf_id=-1, **kwargs):
-        """Viewer for an RDKit molecule with 3D coordinates (a conformer)."""
+        """Viewer for an RDKit molecule with 3D coordinates (a conformer),
+        drawn with the molecule's own bonds."""
         if mol.GetNumConformers() == 0:
             raise ValueError(
                 'the molecule has no 3D coordinates; add them with '
                 'rdkit.Chem.AllChem.EmbedMolecule(mol) first'
             )
-        conf = mol.GetConformer(conf_id)
-        symbols = [a.GetSymbol() for a in mol.GetAtoms()]
-        positions = [tuple(conf.GetAtomPosition(i)) for i in range(mol.GetNumAtoms())]
-        return cls(data=_extxyz([(symbols, positions, None)]), **kwargs)
+        from rdkit import Chem
+        data = Chem.MolToMolBlock(mol, confId=conf_id, forceV3000=mol.GetNumAtoms() > 999)
+        return cls(data=data, **kwargs)
 
     @classmethod
     def from_pymatgen(cls, structure, **kwargs):

@@ -31,6 +31,11 @@ One notebook per image in the [gallery](../../README.md#gallery); each reproduce
 <td align="center" width="33%"><a href="groel.ipynb"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/groel.jpg" width="100%"/><br/><sub>GroEL–GroES chaperonin (1AON)</sub></a></td>
 </tr>
 <tr>
+<td align="center" width="33%"><a href="ribosome.ipynb"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/ribosome.jpg" width="100%"/><br/><sub>Human 80S ribosome, 237,685 atoms (4V6X)</sub></a></td>
+<td align="center" width="33%"><a href="capsid.ipynb"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/capsid.jpg" width="100%"/><br/><sub>Virus capsid, all 60 copies (1STM)</sub></a></td>
+<td align="center" width="33%"><a href="ms2_capsid.ipynb"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/ms2_capsid.jpg" width="100%"/><br/><sub>Bacteriophage MS2 capsid, 180 copies (2MS2)</sub></a></td>
+</tr>
+<tr>
 <td align="center" width="33%"><a href="potassium_channel.ipynb"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/potassium_channel.jpg" width="100%"/><br/><sub>KcsA K⁺ channel (1BL8)</sub></a></td>
 <td align="center" width="33%"><a href="crispr_cas9.ipynb"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/crispr_cas9.jpg" width="100%"/><br/><sub>CRISPR-Cas9 with guide RNA (4OO8)</sub></a></td>
 <td align="center" width="33%"><a href="hiv_protease.ipynb"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/hiv_protease.jpg" width="100%"/><br/><sub>HIV protease + saquinavir (1HXB)</sub></a></td>
@@ -51,6 +56,21 @@ One notebook per image in the [gallery](../../README.md#gallery); each reproduce
 <td align="center" width="33%"><a href="nucleosome.ipynb"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/nucleosome.jpg" width="100%"/><br/><sub>Nucleosome (1KX5)</sub></a></td>
 <td align="center" width="33%"><a href="trna.ipynb"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/trna.jpg" width="100%"/><br/><sub>Transfer RNA (1EHZ)</sub></a></td>
 <td align="center" width="33%"><a href="g_quadruplex.ipynb"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/g_quadruplex.jpg" width="100%"/><br/><sub>G-quadruplex with K⁺ (1KF1)</sub></a></td>
+</tr>
+</table>
+
+## Studio floor, illustration and cutaway
+
+<table>
+<tr>
+<td align="center" width="33%"><a href="floor_hemoglobin.ipynb"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/floor_hemoglobin.jpg" width="100%"/><br/><sub>Hemoglobin on the studio floor (4HHB)</sub></a></td>
+<td align="center" width="33%"><a href="floor_gold.ipynb"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/floor_gold.jpg" width="100%"/><br/><sub>Gold–thiolate cluster on the studio floor</sub></a></td>
+<td align="center" width="33%"><a href="goodsell_hemoglobin.ipynb"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/goodsell_hemoglobin.jpg" width="100%"/><br/><sub>Hemoglobin, Goodsell style (4HHB)</sub></a></td>
+</tr>
+<tr>
+<td align="center" width="33%"><a href="goodsell_capsid.ipynb"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/goodsell_capsid.jpg" width="100%"/><br/><sub>Virus capsid, Goodsell style (1STM)</sub></a></td>
+<td align="center" width="33%"><a href="goodsell_ribosome.ipynb"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/goodsell_ribosome.jpg" width="100%"/><br/><sub>Ribosome large subunit, Goodsell style (1FFK)</sub></a></td>
+<td align="center" width="33%"><a href="cutaway_capsid.ipynb"><img src="https://raw.githubusercontent.com/denphi/speck/master/media/gallery/cutaway_capsid.jpg" width="100%"/><br/><sub>Virus capsid, cut open (1STM)</sub></a></td>
 </tr>
 </table>
 

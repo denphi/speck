@@ -2,7 +2,9 @@
   // Compiles the shared viewer (viewer.ts) and copies the renderer modules
   // (*.js) into lib/, which ipyspeck (../jupyter) and stspeck (../streamlit)
   // import. tsconfig.types.json adds lib/viewer.d.ts. Build with:
-  //   tsc -p core && tsc -p core/tsconfig.types.json
+  //   tsc -p core && tsc -p core/tsconfig.types.json && node core/build-worker.js
+  // (the last step bundles the structure parsers for the Web Worker into
+  // lib/worker-source.js)
   "compilerOptions": {
     "allowJs": true,
     "esModuleInterop": true,

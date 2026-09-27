@@ -6,7 +6,7 @@
 // through the same color / normal / random-rotation depth passes as the atom
 // imposters and receives exactly the same ambient occlusion, outlines and DOF.
 
-var WATER = {HOH: 1, WAT: 1, DOD: 1, H2O: 1, TIP: 1, TIP3: 1, SOL: 1};
+var WATER = {HOH: 1, WAT: 1, DOD: 1, H2O: 1, TIP: 1, TIP3: 1, TIP4: 1, TIP5: 1, T3P: 1, T4P: 1, SPC: 1, SPCE: 1, SOL: 1};
 
 var BACKBONE = {
     // protein
@@ -103,6 +103,7 @@ var getResidues = module.exports.getResidues = function(s) {
                 chain: a.chain,
                 resSeq: a.resSeq,
                 resName: a.resName,
+                entity: a.entity,
                 atoms: {},
                 list: [],
                 ss: "C"
@@ -135,10 +136,13 @@ var getResidues = module.exports.getResidues = function(s) {
     for (var i = 0; i < residues.length; i++) {
         var r = residues[i];
         var ca = r.atoms.CA;
-        if (ca && ca.symbol === "C" && r.atoms.C && r.atoms.N) {
+        // Standard residues count with only their trace atom too (CA- or
+        // P-only models, common for older and very large structures).
+        var standard = !r.list[0].hetero;
+        if (ca && ca.symbol === "C" && ((r.atoms.C && r.atoms.N) || standard)) {
             r.type = "protein";
             r.trace = ca;
-        } else if (r.atoms.P && r.atoms["C4'"]) {
+        } else if (r.atoms.P && (r.atoms["C4'"] || standard)) {
             r.type = "nucleic";
             r.trace = r.atoms.P;
         } else {
@@ -179,23 +183,31 @@ var getResidues = module.exports.getResidues = function(s) {
 function assignSecondaryStructure(s, residues) {
     var helices = s.helices || [];
     var sheets = s.sheets || [];
-    if (helices.length === 0 && sheets.length === 0) {
-        computeSecondaryStructure(residues.segments);
-        return;
+    // Residues by chain, for the ranges given in the file.
+    var byChain = {};
+    for (var j = 0; j < residues.polymer.length; j++) {
+        var r = residues.polymer[j];
+        (byChain[r.chain] = byChain[r.chain] || []).push(r);
     }
+    var covered = {};
     function mark(ranges, ss) {
         for (var i = 0; i < ranges.length; i++) {
             var g = ranges[i];
-            for (var j = 0; j < residues.polymer.length; j++) {
-                var r = residues.polymer[j];
-                if (r.chain === g.chain && r.resSeq >= g.start && r.resSeq <= g.end) {
-                    r.ss = ss;
-                }
+            var list = byChain[g.chain];
+            if (!list) continue;
+            covered[g.chain] = true;
+            for (var k = 0; k < list.length; k++) {
+                if (list[k].resSeq >= g.start && list[k].resSeq <= g.end) list[k].ss = ss;
             }
         }
     }
     mark(sheets, "E");
     mark(helices, "H");
+    // Chains the file gives no secondary structure for (all of them for most
+    // PDB-less inputs; in some assembly files the copies' chain names do not
+    // match the HELIX / SHEET records) get it from backbone H-bonds.
+    var rest = residues.segments.filter(function(seg) { return !covered[seg[0].chain]; });
+    if (rest.length) computeSecondaryStructure(rest);
 }
 
 
@@ -347,13 +359,15 @@ function computeSecondaryStructure(segments) {
 // Atom visibility when the cartoon is shown.
 
 module.exports.applyVisibility = function(s, view) {
-    getResidues(s);
+    var residues = getResidues(s);
     var mode = view.cartoonAtoms;
     for (var i = 0; i < s.atoms.length; i++) {
         var a = s.atoms[i];
         var hidden = false;
         if (a.name !== undefined && view.ligands === false && !a.polymer && !(a.resName in WATER)) {
             // Ligands switched off, in any representation.
+            hidden = true;
+        } else if (view.water === false && a.resName in WATER) {
             hidden = true;
         } else if ((view.cartoon || view.surface) && a.name !== undefined && mode !== "all") {
             if (a.resName in WATER) {
@@ -365,6 +379,26 @@ module.exports.applyVisibility = function(s, view) {
             }
         }
         a.hidden = hidden;
+    }
+    // Atoms colored by a residue scheme (view.atomColor: "chain", "entity",
+    // "type", ...), e.g. for the Goodsell style; element colors otherwise.
+    // Heteroatoms are a shade darker, so the chemistry still reads.
+    // In the illustration style (outlineMode "molecules") colors stay flat, and
+    // ligands get one accent color.
+    var scheme = view.atomColor || "element";
+    var colors = scheme !== "element" && residues ? schemeColors(residues, scheme, view) : null;
+    var flat = view.outlineMode === "molecules";
+    for (var j = 0; j < s.atoms.length; j++) {
+        var b = s.atoms[j];
+        var c = colors && b.polymer && b.residue ? colors.get(b.residue) : undefined;
+        if (c) {
+            var k = flat || b.symbol === "C" || b.symbol === "H" ? 1.0 : 0.82;
+            b.schemeColor = [c[0] * k, c[1] * k, c[2] * k];
+        } else if (colors && flat && b.name !== undefined && !b.polymer && !(b.resName in WATER)) {
+            b.schemeColor = LIGAND_ACCENT;
+        } else if (b.schemeColor) {
+            delete b.schemeColor;
+        }
     }
 };
 
@@ -392,36 +426,97 @@ function plddt(value) {
 
 // Sets r.color on every polymer residue for the given scheme:
 // 'ss', 'chain', 'rainbow', 'plddt' or a '#rrggbb' color.
-var residueColors = module.exports.residueColors = function(residues, scheme, view) {
+// Chain / entity palettes (view.palette). "viridis" and "grays" are
+// gradients spread over all chains; the others cycle.
+var PALETTES = {
+    default: CHAIN_COLORS,
+    // Soft illustration colors (after David Goodsell's paintings).
+    goodsell: [[0.97, 0.66, 0.57], [0.63, 0.64, 0.95], [0.98, 0.85, 0.55], [0.67, 0.86, 0.66],
+               [0.84, 0.72, 0.93], [0.98, 0.74, 0.82], [0.62, 0.87, 0.86], [0.93, 0.80, 0.66],
+               [0.78, 0.84, 0.62], [0.88, 0.66, 0.73]],
+    pastel: [[0.68, 0.78, 0.93], [0.99, 0.80, 0.64], [0.72, 0.89, 0.72], [0.98, 0.71, 0.73],
+             [0.82, 0.76, 0.93], [0.99, 0.93, 0.66], [0.66, 0.89, 0.91], [0.93, 0.74, 0.90],
+             [0.82, 0.88, 0.70], [0.84, 0.84, 0.86]],
+    // Okabe-Ito, distinguishable with color vision deficiencies.
+    colorblind: [[0.00, 0.45, 0.70], [0.90, 0.62, 0.00], [0.00, 0.62, 0.45], [0.80, 0.47, 0.65],
+                 [0.34, 0.71, 0.91], [0.84, 0.37, 0.00], [0.94, 0.89, 0.26], [0.60, 0.60, 0.60]],
+    viridis: "gradient",
+    grays: "gradient"
+};
+// Ligands in the illustration style.
+var LIGAND_ACCENT = [0.30, 0.80, 0.30];
+
+var VIRIDIS = [[0.267, 0.005, 0.329], [0.283, 0.141, 0.458], [0.254, 0.265, 0.530], [0.207, 0.372, 0.553],
+               [0.164, 0.471, 0.558], [0.128, 0.567, 0.551], [0.135, 0.659, 0.518], [0.267, 0.749, 0.441],
+               [0.478, 0.821, 0.318], [0.741, 0.873, 0.150], [0.993, 0.906, 0.144]];
+module.exports.PALETTES = Object.keys(PALETTES);
+
+// Color k of n in a palette.
+function paletteColor(name, k, n) {
+    var p = PALETTES[name] || CHAIN_COLORS;
+    var t = n > 1 ? k / (n - 1) : 0.5;
+    if (name === "viridis") {
+        var x = t * (VIRIDIS.length - 1), i = Math.min(VIRIDIS.length - 2, Math.floor(x));
+        return mix3(VIRIDIS[i], VIRIDIS[i + 1], x - i);
+    }
+    if (name === "grays") {
+        var g = 0.35 + 0.55 * t;
+        return [g, g, g];
+    }
+    return p[k % p.length];
+}
+
+// Color of every polymer residue for a scheme: "ss", "chain", "entity"
+// (molecule type, so every copy of a protein matches), "type" (protein /
+// nucleic acid), "rainbow", "plddt" or a color. Returns a Map residue -> color.
+var schemeColors = module.exports.schemeColors = function(residues, scheme, view) {
     scheme = scheme || "ss";
     var ssColors = view.cartoonColors || SS_COLORS;
+    var palette = view.palette || "default";
     var uniform = Array.isArray(scheme) ? scheme : parseHex(scheme);
-    var chainIndex = {};
-    var chainCount = {};
-    var chainSeen = {};
-    var nChains = 0;
+    var chainIndex = {}, chainCount = {}, chainSeen = {}, nChains = 0;
+    var entityIndex = {}, nEntities = 0;
     for (var i = 0; i < residues.polymer.length; i++) {
-        var c = residues.polymer[i].chain;
+        var r = residues.polymer[i];
+        var c = r.chain;
         if (!(c in chainIndex)) {
             chainIndex[c] = nChains++;
             chainCount[c] = 0;
             chainSeen[c] = 0;
         }
         chainCount[c]++;
+        var e = r.entity || "chain " + c;
+        if (!(e in entityIndex)) entityIndex[e] = nEntities++;
     }
+    var out = new Map();
+    for (var i = 0; i < residues.polymer.length; i++) {
+        var r = residues.polymer[i], color;
+        if (uniform) {
+            color = uniform;
+        } else if (scheme === "chain") {
+            color = paletteColor(palette, chainIndex[r.chain], nChains);
+        } else if (scheme === "entity") {
+            color = paletteColor(palette, entityIndex[r.entity || "chain " + r.chain], nEntities);
+        } else if (scheme === "type") {
+            // Nucleic acids take the first color (warm in the Goodsell palette), proteins the second.
+            color = paletteColor(palette, r.type === "nucleic" ? 0 : 1, 2);
+        } else if (scheme === "rainbow") {
+            color = rainbow(chainSeen[r.chain]++ / Math.max(1, chainCount[r.chain] - 1));
+        } else if (scheme === "plddt") {
+            color = plddt(r.trace.bfactor);
+        } else {
+            color = r.ss === "H" ? ssColors.helix : r.ss === "E" ? ssColors.sheet : ssColors.coil;
+        }
+        out.set(r, color);
+    }
+    return out;
+};
+
+var residueColors = module.exports.residueColors = function(residues, scheme, view) {
+    var colors = schemeColors(residues, scheme, view);
     for (var i = 0; i < residues.polymer.length; i++) {
         var r = residues.polymer[i];
-        if (uniform) {
-            r.color = uniform;
-        } else if (scheme === "chain") {
-            r.color = CHAIN_COLORS[chainIndex[r.chain] % CHAIN_COLORS.length];
-        } else if (scheme === "rainbow") {
-            r.color = rainbow(chainSeen[r.chain]++ / Math.max(1, chainCount[r.chain] - 1));
-        } else if (scheme === "plddt") {
-            r.color = plddt(r.trace.bfactor);
-        } else {
-            r.color = r.ss === "H" ? ssColors.helix : r.ss === "E" ? ssColors.sheet : ssColors.coil;
-        }
+        r.color = colors.get(r);
         r.baseColor = r.color;
         r.color = Select.adjustColor(r.color, r.highlight, view);
     }
@@ -598,20 +693,40 @@ function ringVertices(ring, M) {
     return verts;
 }
 
+var MAX_CARTOON_VERTICES = 6.5e6;  // keeps every gallery structure (up to GroEL) at full quality
+
 module.exports.buildMesh = function(s, view) {
     var residues = getResidues(s);
     residueColors(residues, view.cartoonColor, view);
     var quality = Math.max(2, Math.round(view.cartoonQuality || 8));
+    // About 12 quality^2 vertices per residue: huge structures (ribosomes,
+    // capsids) get a coarser tube so the mesh stays near MAX_CARTOON_VERTICES
+    // (GPU memory, and time per ambient-occlusion sample).
+    var count = 0;
+    for (var c = 0; c < residues.segments.length; c++) {
+        if (residues.segments[c].length >= 2) count += residues.segments[c].length;
+    }
+    if (count > 0) {
+        quality = Math.max(3, Math.min(quality, Math.floor(Math.sqrt(MAX_CARTOON_VERTICES / (12 * count)))));
+    }
     var samples = quality;
     var M = 2 * quality;
 
-    var position = [];
-    var normal = [];
-    var color = [];
+    // Growable typed arrays (plain arrays of millions of numbers take far more memory).
+    var size = 1 << 16, used = 0;
+    var position = new Float32Array(size), normal = new Float32Array(size), color = new Float32Array(size);
+    function grow() {
+        size *= 2;
+        var p = new Float32Array(size), n = new Float32Array(size), k = new Float32Array(size);
+        p.set(position); n.set(normal); k.set(color);
+        position = p; normal = n; color = k;
+    }
     function vertex(p, n, c) {
-        position.push(p[0], p[1], p[2]);
-        normal.push(n[0], n[1], n[2]);
-        color.push(c[0], c[1], c[2]);
+        if (used + 3 > size) grow();
+        position[used] = p[0]; position[used + 1] = p[1]; position[used + 2] = p[2];
+        normal[used] = n[0]; normal[used + 1] = n[1]; normal[used + 2] = n[2];
+        color[used] = c[0]; color[used + 1] = c[1]; color[used + 2] = c[2];
+        used += 3;
     }
     function cap(ring, verts, n) {
         for (var q = 0; q < M; q++) {
@@ -662,9 +777,9 @@ module.exports.buildMesh = function(s, view) {
     }
 
     return {
-        position: new Float32Array(position),
-        normal: new Float32Array(normal),
-        color: new Float32Array(color),
-        count: position.length / 3
+        position: position.subarray(0, used),
+        normal: normal.subarray(0, used),
+        color: color.subarray(0, used),
+        count: used / 3
     };
 };

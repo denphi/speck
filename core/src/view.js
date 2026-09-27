@@ -115,6 +115,10 @@ var center = module.exports.center = function(v, system) {
             minY = Math.min(minY, q[1] - 0.5);
         }
     }
+    if (v.floor > 0) {
+        // Room below for the studio floor's shadow and reflection.
+        minY -= 0.4 * (maxY - minY);
+    }
     var cx = minX + (maxX - minX) / 2.0;
     var cy = minY + (maxY - minY) / 2.0;
     let mres = Math.max(v.resolution.x,v.resolution.y)

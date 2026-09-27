@@ -6,26 +6,18 @@ Wrap network loaders in st.cache_data to avoid downloading on every rerun.
 """
 
 import json
-import re
 import urllib.request
 
+from . import _formats
 
-def count_frames(data):
-    """Number of frames in XYZ (repeated blocks) or PDB (MODEL records) text,
-    e.g. for the range of a frame slider."""
-    if re.search(r"^(ATOM  |HETATM)", data, re.M):
-        return max(1, len(re.findall(r"^ENDMDL", data, re.M)))
-    lines = data.split("\n")
-    count, at = 0, 0
-    while at < len(lines):
-        try:
-            natoms = int(lines[at].strip())
-        except ValueError:
-            break
-        if natoms <= 0 or at + natoms + 2 > len(lines):
-            break
-        count, at = count + 1, at + natoms + 2
-    return max(1, count)
+
+def count_frames(data, trajectory=None):
+    """Number of frames in structure text (mmCIF or PDB models, SDF
+    conformers, XYZ blocks) or in a trajectory for it (from from_mdtraj /
+    from_mdanalysis), e.g. for the range of a frame slider."""
+    if trajectory:
+        return max(1, len(trajectory) // (12 * max(1, _formats.count_atoms(data))))
+    return _formats.count_frames(data)
 
 
 def _extxyz(frames):
@@ -44,18 +36,26 @@ def _extxyz(frames):
 
 
 def read_file(path):
-    """A .pdb, .ent, .xyz or .extxyz file (optionally .gz)."""
-    if str(path).endswith(".gz"):
-        import gzip
-        with gzip.open(path, "rt") as f:
-            return {"data": f.read()}
-    with open(path) as f:
-        return {"data": f.read()}
+    """A structure file: PDB (.pdb, .ent), mmCIF (.cif, .mmcif), MDL Molfile /
+    SDF (.mol, .sdf, with their bonds) or XYZ / extended XYZ, optionally .gz.
+    The format is detected from the content."""
+    return {"data": _formats.read_text(path)}
 
 
-def fetch_pdb(pdb_id):
-    """An RCSB PDB entry (e.g. "1UBQ"), shown as a cartoon."""
-    url = "https://files.rcsb.org/download/%s.pdb" % pdb_id.upper()
+def fetch_pdb(pdb_id, format="cif", assembly=None):
+    """An RCSB PDB entry (e.g. "1UBQ"), shown as a cartoon. Downloaded as
+    mmCIF, which exists for every entry, including large complexes with no
+    PDB file; format="pdb" gets the legacy PDB file. assembly=1 (2, ...)
+    loads that biological assembly, e.g. a complete virus capsid:
+    fetch_pdb("1STM", assembly=1)."""
+    if format not in ("cif", "pdb"):
+        raise ValueError("format must be 'cif' or 'pdb'")
+    if assembly is None:
+        url = "https://files.rcsb.org/download/%s.%s" % (pdb_id.upper(), format)
+    elif format != "cif":
+        raise ValueError("assemblies are available as mmCIF only (format='cif')")
+    else:
+        url = "https://files.rcsb.org/download/%s-assembly%d.cif" % (pdb_id.upper(), int(assembly))
     with urllib.request.urlopen(url) as r:
         return {"data": r.read().decode(), "cartoon": True}
 
@@ -84,14 +84,27 @@ def from_ase(atoms):
 
 
 def from_rdkit(mol, conf_id=-1):
-    """An RDKit molecule with 3D coordinates (a conformer)."""
+    """An RDKit molecule with 3D coordinates (a conformer), drawn with the
+    molecule's own bonds."""
     if mol.GetNumConformers() == 0:
         raise ValueError("the molecule has no 3D coordinates; add them with "
                          "rdkit.Chem.AllChem.EmbedMolecule(mol) first")
-    conf = mol.GetConformer(conf_id)
-    symbols = [a.GetSymbol() for a in mol.GetAtoms()]
-    positions = [tuple(conf.GetAtomPosition(i)) for i in range(mol.GetNumAtoms())]
-    return {"data": _extxyz([(symbols, positions, None)])}
+    from rdkit import Chem
+    return {"data": Chem.MolToMolBlock(mol, confId=conf_id, forceV3000=mol.GetNumAtoms() > 999)}
+
+
+def from_mdtraj(traj, stride=1):
+    """An mdtraj.Trajectory (every `stride`-th frame), shown as a cartoon:
+    the topology as mmCIF plus the frames as binary coordinates."""
+    data, coords, _ = _formats.from_mdtraj(traj, stride)
+    return {"data": data, "trajectory": coords, "cartoon": True}
+
+
+def from_mdanalysis(obj, start=None, stop=None, step=None):
+    """An MDAnalysis Universe or AtomGroup over trajectory[start:stop:step],
+    shown as a cartoon."""
+    data, coords, _ = _formats.from_mdanalysis(obj, start, stop, step)
+    return {"data": data, "trajectory": coords, "cartoon": True}
 
 
 def from_pymatgen(structure):

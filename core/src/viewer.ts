@@ -9,10 +9,11 @@ const speckSystem = require('./system.js');
 const speckView = require('./view.js');
 const speckInteractions = require('./interactions.js');
 const speckColors = require('./colors.js');
-const speckPDB = require('./pdb.js');
+const speckParse = require('./parse-async.js');
+const speckFormats = require('./formats.js');
+import { LoadPanel } from './progress';
 const speckCartoon = require('./cartoon.js');
 const speckSelect = require('./select.js');
-const speckXYZ = require('./xyz.js');
 const speckElements = require('./elements.js');
 
 // Model traits mirrored into the Speck view, with their defaults (these match
@@ -27,9 +28,12 @@ export const VIEW_DEFAULTS: { [key: string]: any } = {
   bondShade: 0.5,
   atomShade: 0.5,
   ligands: true,
+  water: true,
   // colors
   colorScheme: 'speck',
   atomColors: {},
+  atomColor: 'element',
+  palette: 'default',
   // highlighting
   highlight: {},
   highlightColor: '',
@@ -44,6 +48,7 @@ export const VIEW_DEFAULTS: { [key: string]: any } = {
   outline: 0.0,
   outlineWidth: 1.0,
   outlineColor: '#000000',
+  outlineMode: 'depth',
   shadows: 0.0,
   shadowSoftness: 1.5,
   rim: 0.0,
@@ -55,6 +60,11 @@ export const VIEW_DEFAULTS: { [key: string]: any } = {
   dofStrength: 0.0,
   dofPosition: 0.5,
   dofFocus: {},
+  floor: 0.0,
+  floorReflection: 0.3,
+  cutaway: 0.0,
+  cutawayAxis: 'view',
+  cutawayLight: 0.5,
   // materials
   specular: 0.0,
   gloss: 0.5,
@@ -94,9 +104,12 @@ const REBUILD_TRAITS = [
   'bonds',
   'bondThreshold',
   'ligands',
+  'water',
   'cartoon',
   'cartoonColor',
   'cartoonAtoms',
+  'atomColor',
+  'palette',
   'cartoonHelixWidth',
   'cartoonSheetWidth',
   'cartoonThickness',
@@ -128,8 +141,10 @@ const PRESETS: { [key: string]: { [key: string]: any } } = {
 export const LOOKS: { [key: string]: { [key: string]: any } } = {
   default: {
     ao: 0.75, brightness: 0.5, atomShade: 0.5, bondShade: 0.5, cartoonShade: 0.2, surfaceShade: 0.1,
-    outline: 0.0, outlineWidth: 1.0, outlineColor: '#000000', specular: 0.0, gloss: 0.5, metallic: 0.0,
-    metallicAtoms: 'all', shadows: 0.0, rim: 0.0, fog: 0.0, saturation: 1.0, tonemap: false, dofStrength: 0.0,
+    outline: 0.0, outlineWidth: 1.0, outlineColor: '#000000', outlineMode: 'depth', specular: 0.0, gloss: 0.5, metallic: 0.0,
+    metallicAtoms: 'all', shadows: 0.0, rim: 0.0, fog: 0.0, fogColor: '#ffffff', saturation: 1.0, tonemap: false, dofStrength: 0.0,
+    // Set by glass and goodsell: reset so switching looks never keeps them.
+    surfaceOpacity: 1.0, surfaceColor: 'element', atomColor: 'element', palette: 'default', water: true,
   },
   matte: { ao: 0.9, brightness: 0.55 },
   glossy: { specular: 0.6, gloss: 0.65, rim: 0.2, tonemap: true },
@@ -140,10 +155,24 @@ export const LOOKS: { [key: string]: { [key: string]: any } } = {
   },
   metal: { metallic: 1.0, metallicAtoms: 'metals', gloss: 0.75, specular: 0.6, atomShade: 0.1, tonemap: true },
   glass: { surface: true, surfaceOpacity: 0.35, surfaceColor: '#e8e4dc', specular: 0.4, gloss: 0.7, cartoon: true },
+  // After David Goodsell's illustrations: space-filling atoms in flat pastel
+  // colors per chain, thin outlines between molecules, darker with depth.
+  goodsell: {
+    ao: 0.3, brightness: 0.82, atomShade: 0.0, outline: 1.0, outlineWidth: 0.9, outlineColor: '#141414',
+    outlineMode: 'molecules', fog: 0.4, fogColor: '#000000',
+    atomColor: 'chain', palette: 'goodsell', cartoon: false, surface: false, bonds: false, water: false,
+    atomScale: 0.7, relativeAtomScale: 1.0,
+  },
 };
+// Chain / entity palettes (the 'palette' setting), for the color menu.
+const PALETTE_NAMES: [string, string][] = [
+  ['default', 'Default'], ['goodsell', 'Goodsell'], ['pastel', 'Pastel'], ['colorblind', 'Colorblind-safe'],
+  ['viridis', 'Viridis'], ['grays', 'Grays'],
+];
+
 const LOOK_LABELS: { [key: string]: string } = {
   default: 'Default', matte: 'Matte', glossy: 'Glossy', toon: 'Toon (outlines)', cover: 'Cover (shadows, fog)',
-  metal: 'Metal', glass: 'Glass surface',
+  metal: 'Metal', glass: 'Glass surface', goodsell: 'Goodsell illustration',
 };
 
 type MenuSection = (title: string, items: [string, string][], current: string, pick: (v: string) => void) => void;
@@ -188,6 +217,15 @@ const ICONS: { [key: string]: string } = {
     '<path d="M 13.2 5.2 A 6 6 0 1 0 14 9" fill="none" stroke-width="1.5" stroke-linecap="round"/>' +
     '<path stroke="none" d="M 15.2 1.8 L 14.8 7 L 10.2 4.6 Z"/>' +
     '<circle cx="8" cy="8" r="1.6" stroke="none"/>',
+  // A ball on a floor line with its shadow: studio floor on / off
+  floor:
+    '<circle cx="8" cy="6.2" r="4.2" stroke="none"/>' +
+    '<ellipse cx="8" cy="12.4" rx="4.6" ry="1.1" stroke="none" opacity="0.45"/>' +
+    '<path d="M 1 13.6 H 15" fill="none" stroke-width="1.3" stroke-linecap="round"/>',
+  // Half a sphere beside a cutting plane: cutaway on / off
+  cutaway:
+    '<path d="M 9 1.6 A 6.4 6.4 0 0 0 9 14.4 Z" stroke="none"/>' +
+    '<path d="M 11.6 0.8 V 15.2" fill="none" stroke-width="1.5" stroke-linecap="round"/>',
   // Lens aperture: depth of field on / off
   dof:
     '<circle cx="8" cy="8" r="6.6" fill="none" stroke-width="1.3"/>' +
@@ -234,6 +272,31 @@ export interface RenderedImage {
   height: number;
 }
 
+const CANCELLED = { cancelled: true };
+
+function megabytes(n: number): string {
+  return n >= 1e6 ? (n / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1e3)) + ' kB';
+}
+
+function count(n: number, noun: string): string {
+  return n.toLocaleString() + ' ' + noun + (n === 1 ? '' : 's');
+}
+
+function percent(n: number, total: number): string {
+  return Math.round((100 * n) / Math.max(1, total)) + '%';
+}
+
+// "237,685 atoms · 89 chains · 116 frames" for a parsed structure.
+function summary(parsed: any): string {
+  const out = [count(parsed.atoms.length, 'atom')];
+  if (parsed.residues) {
+    const chains = new Set(parsed.atoms.map((a: any) => a.chain)).size;
+    out.push(count(chains, 'chain'));
+  }
+  if (parsed.frames && parsed.frames.length > 1) out.push(count(parsed.frames.length, 'frame'));
+  return out.join(' · ');
+}
+
 // Interactive Speck viewer inside a DOM element. It sizes itself with a
 // ResizeObserver, so it does not depend on any framework's lifecycle.
 export class SpeckViewer {
@@ -251,8 +314,15 @@ export class SpeckViewer {
   private menuOwner: HTMLElement | null = null;
   private menuBuild: ((section: MenuSection) => void) | null = null;
   private lastFrameTime = 0;
+  private loadTicket = 0;
+  private loading = false;
+  private rebuildPending = false;
+  private panel!: LoadPanel;
+  private exporting = false;
   private spinSamples = 32;
   private lastDofStrength = 1.0;
+  private lastCutaway = 0.5;
+  private lastFloor = 0.9;
   private spinFrames = 0;
   private spinTime = 0;
   private pressAt: { x: number; y: number } | null = null;
@@ -300,6 +370,7 @@ export class SpeckViewer {
     this.canvas.addEventListener('keydown', (e) => this.onKey(e));
     el.appendChild(this.canvas);
     this.buildToolbar();
+    this.panel = new LoadPanel(el);
 
     this.removeInteractions = speckInteractions({
       container: this.canvas,
@@ -316,6 +387,7 @@ export class SpeckViewer {
       setZoom: (t: any) => this.zoomTo(t),
       refreshView: () => {
         this.needReset = true;
+        this.panel.stopShading();  // the user moved the view: no progress to follow
         this.scheduleCameraSync();
       },
     });
@@ -375,6 +447,8 @@ export class SpeckViewer {
     this.toggles.cartoon = this.addButton(representations, 'cartoon', 'Cartoon', () => this.toggle('cartoon'));
     this.toggles.surface = this.addButton(representations, 'surface', 'Molecular surface', () => this.toggle('surface'));
     this.toggles.ligands = this.addButton(representations, 'ligands', 'Ligands', () => this.toggle('ligands'));
+    this.toggles.cutaway = this.addButton(representations, 'cutaway', 'Cutaway (slice open)', () => this.toggleCutaway());
+    this.toggles.floor = this.addButton(representations, 'floor', 'Studio floor', () => this.toggleFloor());
 
     const views = this.addGroup();
     this.addButton(views, 'front', 'Front view', () => this.frontview());
@@ -407,6 +481,22 @@ export class SpeckViewer {
     this.el.appendChild(this.menuEl);
     document.addEventListener('pointerdown', this.closeMenuHandler);
     this.updateToolbar();
+  }
+
+  // A message over the viewer until dismissed (e.g. a version mismatch).
+  showNotice(text: string) {
+    const notice = document.createElement('div');
+    notice.className = 'ipyspeck-notice';
+    notice.setAttribute('role', 'alert');
+    notice.textContent = text;
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'ipyspeck-notice-close';
+    close.setAttribute('aria-label', 'Dismiss');
+    close.textContent = '×';
+    close.addEventListener('click', () => notice.remove());
+    notice.appendChild(close);
+    this.el.appendChild(notice);
   }
 
   setStatus(text: string) {
@@ -459,24 +549,31 @@ export class SpeckViewer {
 
   // Applies a changed setting (the host has already stored the new value).
   setTrait(trait: string, value: any) {
+    const wasSpinning = trait === 'autoRotate' && !!this.view.autoRotate;
+    const floorAppears = trait === 'floor' && !(this.view.floor > 0) && value > 0;
     this.view[trait] = value;
     speckView.resolve(this.view);
     if (trait === 'frame' && this.system) {
       speckSystem.setFrame(this.system, this.view.frame);
-      this.rebuild();
+      this.requestRebuild();
     }
-    if (trait === 'autoRotate' && !value) {
+    if (floorAppears && this.system) {
+      // Make room for the floor under the molecule.
+      speckView.center(this.view, this.system);
       this.scheduleCameraSync();
+    }
+    if (trait === 'autoRotate' && wasSpinning && !value) {
+      this.scheduleCameraSync();   // report where the spin stopped
     }
     if (trait === 'colorScheme' || trait === 'atomColors') {
       this.applyElementColors();
-      this.rebuild();
+      this.requestRebuild();
     }
     if (trait === 'aoRes' && this.renderer) {
       this.renderer.setResolution(this.view.resolution, this.view.aoRes);
     }
     if (REBUILD_TRAITS.indexOf(trait) >= 0) {
-      this.rebuild();
+      this.requestRebuild();
     }
     if (trait in this.toggles) {
       this.updateToolbar();
@@ -486,30 +583,85 @@ export class SpeckViewer {
 
   // --- structure ------------------------------------------------------------
 
-  loadStructure() {
+  // A loading step reported by the host before the data reaches the viewer
+  // (e.g. "Downloading 4V6X", fraction 0 - 1 or null when unknown), shown in
+  // the loading panel with the viewer's own steps. done() marks it finished.
+  progress(key: string, label: string, fraction: number | null = null, detail = '') {
+    this.panel.step(key, label, fraction, detail);
+  }
+
+  progressDone(key: string, detail?: string) {
+    this.panel.done(key, detail);
+  }
+
+  progressFailed(message: string) {
+    this.panel.fail(message);
+  }
+
+  // Parses the host's data and shows it. Large texts are parsed in a Web
+  // Worker and built in steps (shown in the loading panel), so this may
+  // finish later: the returned Promise resolves once the structure is shown
+  // (a newer call supersedes a pending one).
+  loadStructure(): Promise<void> {
     if (!this.renderer) {
-      return;
+      return Promise.resolve();
     }
     const text = this.host.get('data') || '';
-    const isPDB = speckPDB.isPDB(text);
-    const parsed = isPDB ? speckPDB.parse(text) : speckXYZ.parse(text);
+    const ticket = ++this.loadTicket;
+    // The new structure is built with the current settings.
+    this.rebuildPending = false;
+    if (text.length < speckParse.ASYNC_BYTES) {
+      this.loading = false;
+      const parsed = speckParse.parse(text);
+      this.showParsed(parsed);
+      // No data yet (e.g. still arriving): keep the host's loading steps.
+      if (text) this.panel.finish(parsed.atoms.length > 0);
+      return Promise.resolve();
+    }
+    this.loading = true;
+    clearTimeout(this.cameraTimer);
+    const names: { [k: string]: string } = { mmcif: 'mmCIF', pdb: 'PDB', sdf: 'SDF', xyz: 'XYZ' };
+    const label = 'Reading ' + names[speckFormats.detect(text)] + ' file (' + megabytes(text.length) + ')';
+    this.panel.step('read', label, 0);
+    const result = speckParse.parse(text, (f: number) => this.panel.update('read', f));
+    return Promise.resolve(result)
+      .then((parsed: any) => {
+        if (ticket !== this.loadTicket) return;
+        this.panel.done('read', summary(parsed));
+        return this.buildInSteps(parsed, ticket);
+      })
+      .catch((err: any) => {
+        if (ticket !== this.loadTicket || err === CANCELLED) return;
+        this.loading = false;
+        this.panel.fail('Could not read the structure: ' + (err && err.message ? err.message : err));
+      });
+  }
+
+  // The system (atoms, frames, cell) of a parsed structure, centered.
+  private buildSystem(parsed: any): any {
+    const system = speckSystem.new();
+    for (const a of parsed.atoms) {
+      speckSystem.addAtom(system, a.symbol, a.x, a.y, a.z, parsed.residues ? a : undefined);
+    }
+    system.explicitBonds = parsed.bonds;
+    system.helices = parsed.helices || [];
+    system.sheets = parsed.sheets || [];
+    system.frames = this.trajectoryFrames(parsed.atoms.length) || parsed.frames;
+    system.cell = parsed.cell;
+    speckSystem.center(system);
+    if (this.view.frame > 0) {
+      speckSystem.setFrame(system, this.view.frame);
+    }
+    return system;
+  }
+
+  private showParsed(parsed: any) {
     if (parsed.atoms.length === 0) {
       return;
     }
-    this.system = speckSystem.new();
-    for (const a of parsed.atoms) {
-      speckSystem.addAtom(this.system, a.symbol, a.x, a.y, a.z, isPDB ? a : undefined);
-    }
-    this.system.helices = parsed.helices || [];
-    this.system.sheets = parsed.sheets || [];
-    this.system.frames = parsed.frames;
-    this.system.cell = parsed.cell;
-    speckSystem.center(this.system);
-    if (this.view.frame > 0) {
-      speckSystem.setFrame(this.system, this.view.frame);
-    }
+    this.system = this.buildSystem(parsed);
     if (this.host.framesChanged) {
-      this.host.framesChanged(parsed.frames.length);
+      this.host.framesChanged(this.system.frames.length);
     }
     const camera = this.host.get('camera');
     if (camera && camera.rotation) {
@@ -520,7 +672,105 @@ export class SpeckViewer {
     }
   }
 
+  // The same as showParsed, one step per frame so the loading panel can show
+  // each step while it runs (large structures take seconds in total).
+  private async buildInSteps(parsed: any, ticket: number) {
+    const run = async (key: string, label: string, work: () => string) => {
+      this.panel.step(key, label);
+      // Let the panel paint before the work blocks the page.
+      await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+      if (ticket !== this.loadTicket) throw CANCELLED;
+      this.panel.done(key, work());
+    };
+    if (parsed.atoms.length === 0) {
+      this.loading = false;
+      this.panel.fail('No atoms found in the file');
+      return;
+    }
+    let system: any = null;
+    await run('atoms', 'Placing ' + parsed.atoms.length.toLocaleString() + ' atoms', () => {
+      system = this.buildSystem(parsed);
+      return '';
+    });
+    if (parsed.residues) {
+      await run('structure', 'Finding residues and secondary structure', () => {
+        speckCartoon.applyVisibility(system, this.view);
+        speckSelect.apply(system, this.view);
+        const residues = system._residues ? system._residues.polymer : [];
+        const chains = new Set(residues.map((r: any) => r.chain)).size;
+        const helix = residues.filter((r: any) => r.ss === 'H').length;
+        const strand = residues.filter((r: any) => r.ss === 'E').length;
+        return residues.length
+          ? count(residues.length, 'residue') + ' in ' + count(chains, 'chain') +
+              (helix + strand ? ' · ' + percent(helix, residues.length) + ' helix, ' + percent(strand, residues.length) + ' strand' : '')
+          : 'no polymer';
+      });
+    } else {
+      speckCartoon.applyVisibility(system, this.view);
+      speckSelect.apply(system, this.view);
+    }
+    if (this.view.bonds && system.atoms.some((a: any) => !a.hidden)) {
+      await run('bonds', 'Finding bonds', () => {
+        speckSystem.calculateBonds(system, this.view);
+        return count(system.bonds.count, 'bond');
+      });
+    } else {
+      speckSystem.calculateBonds(system, this.view);
+    }
+    const parts = [this.view.cartoon ? 'cartoon' : '', this.view.surface ? 'molecular surface' : ''].filter((x) => x);
+    const label = parts.length ? 'Building ' + parts.join(' and ') : 'Preparing the scene';
+    await run('geometry', label + (this.view.surface ? ' (the slowest step)' : ''), () => {
+      this.system = system;
+      this.renderer.setSystem(system, this.view);
+      this.needReset = true;
+      return (this.renderer.getSceneVertices() / 1e6).toFixed(1) + 'M vertices on the GPU';
+    });
+    this.loading = false;
+    if (this.host.framesChanged) {
+      this.host.framesChanged(system.frames.length);
+    }
+    const camera = this.host.get('camera');
+    if (camera && camera.rotation) {
+      this.setCamera(camera);
+    } else {
+      speckView.center(this.view, system);
+      this.needReset = true;
+      this.scheduleCameraSync();
+    }
+    this.panel.finish(true);
+  }
+
+  // Frames the host sends separately (MD trajectories): a Float32Array of
+  // x, y, z for every atom, frame after frame; ignored unless it matches the
+  // structure's atom count.
+  private trajectoryFrames(natoms: number): Float32Array[] | null {
+    const all = this.host.get('trajectory');
+    if (!all || !all.length || natoms === 0 || all.length % (3 * natoms) !== 0) {
+      return null;
+    }
+    const frames: Float32Array[] = [];
+    for (let k = 0; k < all.length; k += 3 * natoms) {
+      frames.push(all.subarray(k, k + 3 * natoms));
+    }
+    return frames;
+  }
+
+  // Settings that need new geometry mark it; the scene is rebuilt once, on
+  // the next frame, however many settings changed (a host applying a preset
+  // or a whole scene changes dozens at once).
+  private requestRebuild() {
+    this.rebuildPending = true;
+    this.needReset = true;
+  }
+
+  // Rebuilds now if settings changed since the last build (before anything
+  // that reads the geometry: exports, picking).
+  private flushRebuild() {
+    if (this.rebuildPending) this.rebuild();
+  }
+
   rebuild() {
+    this.rebuildPending = false;
     if (this.system && this.renderer) {
       speckCartoon.applyVisibility(this.system, this.view);
       speckSelect.apply(this.system, this.view);
@@ -554,6 +804,9 @@ export class SpeckViewer {
   private scheduleCameraSync() {
     clearTimeout(this.cameraTimer);
     this.cameraTimer = setTimeout(() => {
+      // While a structure loads in the background, the host's camera belongs
+      // to it: reporting the old view would overwrite it.
+      if (this.loading) return;
       if (this.host.cameraChanged) {
         this.host.cameraChanged(this.cameraState());
       }
@@ -623,6 +876,28 @@ export class SpeckViewer {
     }
   }
 
+  // Cutaway off, or back on at the last depth used (through the center at first).
+  toggleCutaway() {
+    const depth = this.host.get('cutaway');
+    if (depth > 0) {
+      this.lastCutaway = depth;
+      this.host.set({ cutaway: 0 });
+    } else {
+      this.host.set({ cutaway: this.lastCutaway });
+    }
+  }
+
+  // Studio floor off, or back on at the last strength used (0.9 at first).
+  toggleFloor() {
+    const strength = this.host.get('floor');
+    if (strength > 0) {
+      this.lastFloor = strength;
+      this.host.set({ floor: 0 });
+    } else {
+      this.host.set({ floor: this.lastFloor });
+    }
+  }
+
   // Depth of field off, or back on at the last strength used (1.0 at first).
   toggleDepthOfField() {
     const strength = this.host.get('dofStrength');
@@ -679,6 +954,7 @@ export class SpeckViewer {
   // background. Turns depth of field on if it was off.
   focusAt(fx: number, fy: number): boolean {
     if (!this.renderer || !this.system) return false;
+    this.flushRebuild();
     const depth = this.renderer.pickDepth(this.view, fx, fy);
     if (depth === null) return false;
     const changes: { [trait: string]: any } = { dofPosition: Math.round(depth * 1e4) / 1e4, dofFocus: {} };
@@ -826,7 +1102,8 @@ export class SpeckViewer {
   toggleColorMenu() {
     this.toggleMenu(this.colorButton, 'Colors', (section) => {
       const residue: [string, string][] = [
-        ['ss', 'Secondary structure'], ['chain', 'Chain'], ['rainbow', 'Rainbow N→C'], ['plddt', 'AlphaFold confidence'],
+        ['ss', 'Secondary structure'], ['chain', 'Chain'], ['entity', 'Molecule (entity)'], ['type', 'Protein / nucleic acid'],
+        ['rainbow', 'Rainbow N→C'], ['plddt', 'AlphaFold confidence'],
       ];
       if (this.host.get('cartoon')) {
         section('Cartoon', residue, this.host.get('cartoonColor'), (v) => this.host.set({ cartoonColor: v }));
@@ -835,8 +1112,11 @@ export class SpeckViewer {
         section('Surface', [['element', 'Element'], ...residue, ['#eef2f8', 'Glass white']],
           this.host.get('surfaceColor'), (v) => this.host.set({ surfaceColor: v }));
       }
+      section('Atoms', [['element', 'Element'], ...residue.filter(([k]) => k !== 'plddt')],
+        this.host.get('atomColor') || 'element', (v) => this.host.set({ atomColor: v }));
+      section('Palette', PALETTE_NAMES, this.host.get('palette') || 'default', (v) => this.host.set({ palette: v }));
       const palettes: { [name: string]: string } = { speck: 'Speck', jmol: 'Jmol', rasmol: 'RasMol', newcpk: 'New CPK' };
-      section('Atoms', Object.keys(speckColors).map((k) => [k, palettes[k] || k] as [string, string]),
+      section('Elements', Object.keys(speckColors).map((k) => [k, palettes[k] || k] as [string, string]),
         this.host.get('colorScheme'), (v) => this.setColorSchema(v));
     });
   }
@@ -879,6 +1159,11 @@ export class SpeckViewer {
 
   // --- export --------------------------------------------------------------
 
+  // Atoms of the loaded structure (0 before it loads).
+  get atomCount(): number {
+    return this.system ? this.system.atoms.length : 0;
+  }
+
   get ready(): boolean {
     return this.system !== null && this.renderer !== null;
   }
@@ -918,7 +1203,7 @@ export class SpeckViewer {
             if (!trajectory) {
               speckView.turn(view, angle);
             }
-          });
+          }, trajectory);
           onFrame(k, count, image);
         }
       } finally {
@@ -949,14 +1234,20 @@ export class SpeckViewer {
     return run;
   }
 
-  private async renderOffscreen(options: any, prepare?: (view: any) => void): Promise<RenderedImage> {
+  // Renders with the viewer's own WebGL context (so large structures are not
+  // held twice in GPU memory): the on-screen loop pauses, the renderer
+  // switches to the export size, and everything is restored afterwards.
+  // geometryChanged: the atoms moved (trajectory frames), so the renderer's
+  // buffers are rebuilt.
+  private async renderOffscreen(options: any, prepare?: (view: any) => void,
+                                geometryChanged = false): Promise<RenderedImage> {
     const cssWidth = this.el.clientWidth || this.view.resolution.x;
     const cssHeight = this.el.clientHeight || this.view.resolution.y;
     const scale = options.scale || 2;
     let width = Math.round(options.width || (options.height ? (cssWidth * options.height) / cssHeight : cssWidth * scale));
     let height = Math.round(options.height || (options.width ? (cssHeight * options.width) / cssWidth : cssHeight * scale));
 
-    const canvas = document.createElement('canvas');
+    const canvas = this.canvas;
     const probe = canvas.getContext('webgl') as WebGLRenderingContext;
     // The renderer keeps about 20 square textures of the largest side, so the
     // largest side (after supersampling) is capped well below GPU limits.
@@ -984,10 +1275,16 @@ export class SpeckViewer {
       prepare(view);
     }
 
-    const renderer = new speckRenderer(canvas, view.resolution, view.aoRes);
+    this.flushRebuild();
+    const renderer = this.renderer;
+    const live = { resolution: this.view.resolution, aoRes: this.view.aoRes };
     const out = document.createElement('canvas');
+    this.exporting = true;
     try {
-      renderer.setSystem(this.system, view);
+      renderer.setResolution(view.resolution, view.aoRes);
+      if (geometryChanged) {
+        renderer.setSystem(this.system, view);
+      }
       renderer.reset();
       // Each frame adds AO samples; yield between frames to keep the page alive.
       for (let i = 0; i < 400; i++) {
@@ -1010,10 +1307,9 @@ export class SpeckViewer {
       (ctx as any).imageSmoothingQuality = 'high';
       ctx.drawImage(canvas, 0, 0, width, height);
     } finally {
-      const lose = probe.getExtension('WEBGL_lose_context');
-      if (lose) {
-        lose.loseContext();
-      }
+      renderer.setResolution(live.resolution, live.aoRes);
+      this.exporting = false;
+      this.needReset = true;
     }
     const blob: Blob = await new Promise((resolve) => out.toBlob((b) => resolve(b as Blob), 'image/png'));
     return { png: await blob.arrayBuffer(), width: width, height: height };
@@ -1056,6 +1352,16 @@ export class SpeckViewer {
     if (!this.renderer) {
       return;
     }
+    if (this.exporting) {
+      // An export is using the renderer.
+      this.frame = requestAnimationFrame(() => this.loop());
+      return;
+    }
+    // Settings changed: rebuild once (not while a new structure is being
+    // built, which uses the current settings anyway).
+    if (this.rebuildPending && !this.loading) {
+      this.rebuild();
+    }
     const now = performance.now();
     const dt = this.lastFrameTime ? now - this.lastFrameTime : 16;
     this.lastFrameTime = now;
@@ -1083,6 +1389,9 @@ export class SpeckViewer {
         this.needReset = false;
       }
       this.renderer.render(this.view);
+      if (this.panel.shading) {
+        this.panel.shadingProgress(this.view.ao > 0 ? this.renderer.getAOProgress() : 1);
+      }
     }
     if (this.snapshotRequested) {
       this.snapshotRequested = false;

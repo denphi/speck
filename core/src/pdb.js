@@ -3,7 +3,8 @@
 var elements = require("./elements");
 
 // Minimal PDB reader: first MODEL only, first alternate location only.
-// Returns atoms carrying residue information plus HELIX/SHEET ranges.
+// Returns atoms carrying residue information, HELIX/SHEET ranges and the
+// bonds of CONECT records (as atom index pairs).
 
 function isPDB(data) {
     return /^(ATOM  |HETATM)/m.test(data);
@@ -41,7 +42,7 @@ function cellFromCryst1(line) {
     return [[a, 0, 0], [b * Math.cos(ga), b * Math.sin(ga), 0], [c * cx, c * cy, c * cz]];
 }
 
-function parse(data) {
+function parse(data, onProgress) {
     var lines = data.split("\n");
     var atoms = [];
     var helices = [];
@@ -51,7 +52,11 @@ function parse(data) {
     var frames = [];
     var model = null;
     var models = 0;
+    var serials = {};   // atom serial number -> index, for CONECT
+    var conect = [];
+    var step = Math.max(1, Math.floor(lines.length / 50));
     for (var i = 0; i < lines.length; i++) {
+        if (onProgress && i % step === 0 && i > 0) onProgress(i / lines.length);
         var line = lines[i];
         var record = line.substring(0, 6);
         if (record === "ENDMDL") {
@@ -74,6 +79,7 @@ function parse(data) {
                 continue;
             }
             var name = line.substring(12, 16).trim();
+            serials[parseInt(line.substring(6, 11))] = atoms.length;
             atoms.push({
                 symbol: elementSymbol(line, name),
                 x: parseFloat(line.substring(30, 38)),
@@ -88,6 +94,12 @@ function parse(data) {
                 bfactor: parseFloat(line.substring(60, 66)),
                 hetero: record === "HETATM"
             });
+        } else if (record === "CONECT") {
+            var from = parseInt(line.substring(6, 11));
+            for (var c = 11; c + 5 <= line.length && c < 31; c += 5) {
+                var to = parseInt(line.substring(c, c + 5));
+                if (!isNaN(to) && from < to) conect.push([from, to]);
+            }
         } else if (record === "HELIX ") {
             helices.push({
                 chain: line.charAt(19),
@@ -109,11 +121,17 @@ function parse(data) {
         first[3 * k + 1] = atoms[k].y;
         first[3 * k + 2] = atoms[k].z;
     }
+    var bonds = [];
+    for (var b = 0; b < conect.length; b++) {
+        var i1 = serials[conect[b][0]], i2 = serials[conect[b][1]];
+        if (i1 !== undefined && i2 !== undefined) bonds.push([i1, i2]);
+    }
     return {
         atoms: atoms,
         helices: helices,
         sheets: sheets,
         cell: cell,
+        bonds: bonds,
         frames: [first].concat(frames)
     };
 }

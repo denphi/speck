@@ -13,6 +13,8 @@
     {label: "Hemoglobin", query: "4HHB", preset: "glossy",
      settings: {cartoon: true, cartoonColor: "chain", surface: true, surfaceOpacity: 0.3, surfaceColor: "#eef2f8",
                 highlight: {resName: "HEM"}, highlightScale: 1.3, shadows: 0.4}},
+    {label: "Virus capsid", query: "1STM-assembly1", preset: "cover", settings: {cartoon: true, cartoonColor: "chain"}},
+    {label: "Ribosome (mmCIF)", query: "4V6X", preset: "cover", settings: {cartoon: true, cartoonColor: "chain", ligands: false}},
     {label: "Nucleosome", query: "1KX5", preset: "cover", settings: {cartoon: true, cartoonColor: "chain", ligands: false}},
     {label: "Spike", query: "6VXX", preset: "cover",
      settings: {surface: true, surfaceColor: "chain", surfaceResolution: 0.8}},
@@ -26,6 +28,11 @@
 
   var RCSB = "https://files.rcsb.org/download/";
   var SCENES = {};
+  // Defaults that depend on the structure (proteins open as cartoons,
+  // AlphaFold models colored by confidence), for "Reset all settings".
+  var baseSettings = {cartoon: false};
+  // Where the shown structure came from, for "Copy as Python".
+  var current = {kind: "text", name: "structure"};
 
   // --- viewer state (the "host" of SpeckViewer) ------------------------------
   function freshState() {
@@ -40,8 +47,10 @@
   var viewer = new S.SpeckViewer(document.getElementById("viewer"), {
     get: function (trait) { return state[trait]; },
     set: function (changes) { apply(changes); },   // toolbar buttons
-    cameraChanged: function (camera) { state.camera = camera; }
+    cameraChanged: function (camera) { state.camera = camera; },
+    framesChanged: function (n) { setFrameCount(n); }
   });
+  window.speckViewer = viewer;   // for scripting the demo from the console
 
   function apply(changes) {
     for (var k in changes) {
@@ -52,28 +61,202 @@
     markPreset(viewer.currentLook() || null);   // also when picked in the toolbar
   }
 
+  function toHex(v) {
+    if (Array.isArray(v)) {
+      return "#" + v.map(function (c) { return ("0" + Math.round(Math.max(0, Math.min(1, c)) * 255).toString(16)).slice(-2); }).join("");
+    }
+    return /^#[0-9a-f]{6}$/i.test(v || "") ? v : "#ffffff";
+  }
+
   function syncControls() {
     controls.forEach(function (el) {
       var v = state[el.dataset.trait];
       if (el.type === "checkbox") el.checked = !!v;
+      else if (el.type === "color") el.value = toHex(v);
       else el.value = v;
       var out = el.parentNode.querySelector(".v");
-      if (out) out.textContent = Number(v).toFixed(2);
+      if (out) out.textContent = Number(v).toFixed(el.dataset.digits === undefined ? 2 : +el.dataset.digits);
     });
     document.getElementById("focusLigands").checked = !!(state.dofFocus && state.dofFocus.ligands);
+    syncHighlight();
+    syncElementColors();
   }
 
   controls.forEach(function (el) {
-    el.addEventListener(el.type === "range" ? "input" : "change", function () {
+    el.addEventListener(el.type === "range" || el.type === "color" ? "input" : "change", function () {
       var change = {};
-      change[el.dataset.trait] = el.type === "checkbox" ? el.checked : el.type === "range" ? parseFloat(el.value) : el.value;
+      change[el.dataset.trait] = el.type === "checkbox" ? el.checked :
+                                 el.type === "range" || el.dataset.type === "number" ? parseFloat(el.value) : el.value;
       apply(change);
-      markPreset(null);
     });
   });
   document.getElementById("focusLigands").addEventListener("change", function (e) {
     apply({dofFocus: e.target.checked ? {ligands: true} : {},
            dofStrength: e.target.checked && state.dofStrength === 0 ? 1.0 : state.dofStrength});
+  });
+
+  // --- frames (trajectories) ------------------------------------------------
+  var frameRow = document.getElementById("frameRow");
+  function setFrameCount(n) {
+    frameRow.querySelector("input").max = Math.max(0, n - 1);
+    frameRow.style.display = n > 1 ? "" : "none";
+  }
+  setFrameCount(1);
+
+  // --- highlight -------------------------------------------------------------
+  var hl = {chain: document.getElementById("hlChain"), resName: document.getElementById("hlResName"),
+            resSeq: document.getElementById("hlResSeq"), ligands: document.getElementById("hlLigands"),
+            recolor: document.getElementById("hlRecolor"), color: document.getElementById("hlColor")};
+  function list(text) {
+    return text.split(/[,\s]+/).filter(function (x) { return x; });
+  }
+  function readHighlight() {
+    var sel = {};
+    if (list(hl.chain.value).length) sel.chain = list(hl.chain.value);
+    if (list(hl.resName.value).length) sel.resName = list(hl.resName.value.toUpperCase());
+    if (list(hl.resSeq.value).length) sel.resSeq = list(hl.resSeq.value);
+    if (hl.ligands.checked) sel.ligands = true;
+    apply({highlight: sel, highlightColor: hl.recolor.checked ? hl.color.value : ""});
+  }
+  function syncHighlight() {
+    var sel = state.highlight || {};
+    var text = function (v) { return v === undefined ? "" : [].concat(v).join(", "); };
+    if (document.activeElement !== hl.chain) hl.chain.value = text(sel.chain);
+    if (document.activeElement !== hl.resName) hl.resName.value = text(sel.resName);
+    if (document.activeElement !== hl.resSeq) hl.resSeq.value = text(sel.resSeq);
+    hl.ligands.checked = !!sel.ligands;
+    hl.recolor.checked = !!state.highlightColor;
+    if (state.highlightColor) hl.color.value = state.highlightColor;
+  }
+  [hl.chain, hl.resName, hl.resSeq].forEach(function (el) { el.addEventListener("change", readHighlight); });
+  [hl.ligands, hl.recolor].forEach(function (el) { el.addEventListener("change", readHighlight); });
+  hl.color.addEventListener("input", function () { if (hl.recolor.checked) readHighlight(); });
+
+  // --- element colors ----------------------------------------------------------
+  var elList = document.getElementById("elList");
+  document.getElementById("elSet").addEventListener("click", function () {
+    var sym = document.getElementById("elSymbol").value.trim();
+    sym = sym.charAt(0).toUpperCase() + sym.slice(1).toLowerCase();
+    if (!(sym in S.elements)) { elList.textContent = "Unknown element " + JSON.stringify(sym); return; }
+    var colors = Object.assign({}, state.atomColors || {});
+    colors[sym] = document.getElementById("elColor").value;
+    apply({atomColors: colors});
+  });
+  function syncElementColors() {
+    var colors = state.atomColors || {};
+    var keys = Object.keys(colors);
+    elList.innerHTML = "";
+    if (!keys.length) return;
+    elList.appendChild(document.createTextNode("Custom: " + keys.map(function (k) { return k + " " + toHex(colors[k]); }).join(", ") + " · "));
+    var reset = document.createElement("a");
+    reset.textContent = "reset";
+    reset.addEventListener("click", function () { apply({atomColors: {}}); });
+    elList.appendChild(reset);
+  }
+
+  // --- background ----------------------------------------------------------------
+  // The viewer is transparent; the page paints a radial gradient behind it (the
+  // gallery images use the same ones) and exports composite it under the image.
+  var BACKGROUNDS = [
+    {name: "Page", center: null},
+    {name: "Studio light", center: [252, 252, 253], edge: [221, 226, 234]},
+    {name: "Dark", center: [24, 30, 46], edge: [8, 10, 16]},
+    {name: "Warm", center: [250, 246, 240], edge: [214, 206, 196]},
+    {name: "Mint", center: [246, 251, 248], edge: [206, 222, 214]},
+    {name: "White", center: [255, 255, 255], edge: [255, 255, 255]},
+    {name: "Black", center: [0, 0, 0], edge: [0, 0, 0]}
+  ];
+  var background = {center: null, edge: null, vignette: false, fromScene: false};
+  var vignetteEl = document.createElement("div");
+  vignetteEl.className = "vignette";
+  document.querySelector("#viewer canvas").insertAdjacentElement("afterend", vignetteEl);
+  var bgCenter = document.getElementById("bgCenter"), bgEdge = document.getElementById("bgEdge"),
+      bgVignette = document.getElementById("bgVignette"), bgSwatches = document.getElementById("bgSwatches");
+  function rgbHex(c) { return toHex(c.map(function (x) { return x / 255; })); }
+  function hexRgb(h) { var v = parseInt(h.slice(1), 16); return [v >> 16 & 255, v >> 8 & 255, v & 255]; }
+  function css(c) { return "rgb(" + c.join(",") + ")"; }
+  function setBackground(bg) {
+    background = Object.assign({}, background, bg);
+    var b = background;
+    stage.style.background = b.center ? "radial-gradient(ellipse at 50% 42%, " + css(b.center) + " 0%, " + css(b.edge) + " 100%)" : "";
+    // The vignette darkens the molecule too (as in the gallery), so it lies over the canvas.
+    vignetteEl.style.display = b.center && b.vignette ? "" : "none";
+    // Light hint text on dark backgrounds.
+    var lum = b.center ? 0.3 * b.center[0] + 0.59 * b.center[1] + 0.11 * b.center[2] : 255;
+    stage.classList.toggle("dark", lum < 110);
+    bgCenter.value = rgbHex(b.center || [245, 246, 248]);
+    bgEdge.value = rgbHex(b.edge || [245, 246, 248]);
+    bgVignette.checked = !!b.vignette;
+    [].forEach.call(bgSwatches.children, function (btn, k) {
+      var p = BACKGROUNDS[k];
+      btn.classList.toggle("active", p.center ? !!b.center && p.center.join() === b.center.join() && p.edge.join() === b.edge.join() : !b.center);
+    });
+  }
+  BACKGROUNDS.forEach(function (p) {
+    var btn = document.createElement("button");
+    btn.title = btn.ariaLabel = p.name;
+    btn.setAttribute("aria-label", p.name);
+    btn.style.background = p.center ? "radial-gradient(circle at 50% 40%, " + css(p.center) + ", " + css(p.edge) + ")" :
+      "linear-gradient(135deg, #f5f6f8 45%, #d7dbe2 45%, #d7dbe2 55%, #f5f6f8 55%)";
+    btn.addEventListener("click", function () { setBackground({center: p.center, edge: p.edge, fromScene: false}); });
+    bgSwatches.appendChild(btn);
+  });
+  bgCenter.addEventListener("input", function () {
+    setBackground({center: hexRgb(bgCenter.value), edge: background.edge || hexRgb(bgEdge.value), fromScene: false});
+  });
+  bgEdge.addEventListener("input", function () {
+    setBackground({center: background.center || hexRgb(bgCenter.value), edge: hexRgb(bgEdge.value), fromScene: false});
+  });
+  bgVignette.addEventListener("change", function () {
+    setBackground({vignette: bgVignette.checked, center: background.center || [252, 252, 253], edge: background.edge || [221, 226, 234]});
+  });
+
+  setBackground({});
+
+  // --- reset -------------------------------------------------------------------------
+  function defaults(traits) {
+    var out = {};
+    traits.forEach(function (k) {
+      out[k] = JSON.parse(JSON.stringify(k in baseSettings ? baseSettings[k] : S.VIEW_DEFAULTS[k]));
+    });
+    return out;
+  }
+  // Settings shown in a section, plus those its custom controls set.
+  var EXTRA = {colors: ["atomColors"], highlight: ["highlight", "highlightColor"], dof: ["dofFocus"]};
+  function sectionTraits(sec) {
+    var traits = [].map.call(sec.querySelectorAll("[data-trait]"), function (el) { return el.dataset.trait; });
+    return traits.concat(EXTRA[sec.dataset.sec] || []).filter(function (k) { return k in S.VIEW_DEFAULTS && k !== "frame"; });
+  }
+  [].forEach.call(document.querySelectorAll("details.sec"), function (sec) {
+    var traits = sectionTraits(sec);
+    var isBackground = sec.dataset.sec === "background";
+    if (!traits.length && !isBackground) return;
+    var button = document.createElement("button");
+    button.className = "reset-sec";
+    var title = sec.querySelector("summary").childNodes[0].textContent.trim();
+    button.textContent = "Reset " + title.toLowerCase();
+    button.addEventListener("click", function () {
+      if (isBackground) setBackground({center: null, edge: null, vignette: false, fromScene: false});
+      else apply(defaults(traits));
+    });
+    sec.querySelector(".sec-body").appendChild(button);
+  });
+  document.getElementById("resetAll").addEventListener("click", function () {
+    apply(defaults(Object.keys(S.VIEW_DEFAULTS).filter(function (k) { return k !== "frame"; })));
+    setBackground({center: null, edge: null, vignette: false, fromScene: false});
+    markPreset(viewer.currentLook() || null);
+  });
+
+  // --- remembered sections ---------------------------------------------------------
+  [].forEach.call(document.querySelectorAll("details.sec"), function (d) {
+    var key = "speck.section." + d.dataset.sec;
+    try {
+      var saved = localStorage.getItem(key);
+      if (saved !== null) d.open = saved === "1";
+    } catch (e) { /* storage unavailable */ }
+    d.addEventListener("toggle", function () {
+      try { localStorage.setItem(key, d.open ? "1" : "0"); } catch (e) { /* ignore */ }
+    });
   });
 
   // --- presets ------------------------------------------------------------
@@ -98,29 +281,65 @@
   // Only the most recently started load is shown (a slow download must not
   // replace a structure picked after it).
   var loadTicket = 0;
-  var loadingEl = document.getElementById("loading");
 
-  function fetchText(url) {
+  // Downloads text, reporting progress in the viewer's loading panel.
+  function fetchText(url, label) {
+    label = label || "Downloading " + url.split("/").pop();
+    viewer.progress("download", label, 0);
     return fetch(url).then(function (r) {
       if (!r.ok) throw new Error(r.status + " for " + url);
-      return r.text();
+      // Content-Length is the compressed size when the server gzips the
+      // transfer, so it only gives a fraction while it is not exceeded.
+      var total = parseInt(r.headers.get("content-length") || "0");
+      if (!r.body || !r.body.getReader) {
+        return r.text().then(function (t) { viewer.progressDone("download", mb(t.length)); return t; });
+      }
+      var reader = r.body.getReader(), chunks = [], got = 0;
+      function pump() {
+        return reader.read().then(function (part) {
+          if (part.done) {
+            viewer.progressDone("download", mb(got));
+            return new Blob(chunks).text();
+          }
+          chunks.push(part.value);
+          got += part.value.length;
+          viewer.progress("download", label, total && got <= total ? got / total : null, mb(got) + " received");
+          return pump();
+        });
+      }
+      return pump();
     });
+  }
+
+  function mb(n) {
+    return n >= 1e6 ? (n / 1e6).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1e3)) + " kB";
   }
 
   function fetchStructure(query) {
     query = query.trim();
-    if (/^[0-9][A-Za-z0-9]{3}$/.test(query)) {
-      return fetchText("https://files.rcsb.org/download/" + query.toUpperCase() + ".pdb")
-        .then(function (t) { return {text: t, source: "RCSB " + query.toUpperCase()}; });
+    // "1UBQ", or "1STM-assembly1" for a biological assembly (e.g. a whole capsid)
+    var entry = /^([0-9][A-Za-z0-9]{3})(?:[-\s]*assembly\s*(\d+))?$/i.exec(query);
+    if (entry) {
+      var id = entry[1].toUpperCase();
+      var file = entry[2] ? id + "-assembly" + entry[2] : id;
+      // mmCIF: available for every entry, including those too large for PDB files
+      return fetchText("https://files.rcsb.org/download/" + file + ".cif", "Downloading " + file + " from RCSB")
+        .then(function (t) { return {text: t, source: "RCSB " + file}; });
     }
+    viewer.progress("lookup", "Looking up " + query.toUpperCase() + " in AlphaFold DB");
     return fetch("https://alphafold.ebi.ac.uk/api/prediction/" + encodeURIComponent(query.toUpperCase()))
       .then(function (r) { if (!r.ok) throw new Error("no AlphaFold model for " + query); return r.json(); })
-      .then(function (entries) { return fetchText(entries[0].pdbUrl); })
+      .then(function (entries) {
+        viewer.progressDone("lookup", entries[0].entryId || "");
+        return fetchText(entries[0].pdbUrl, "Downloading the AlphaFold model");
+      })
       .then(function (t) { return {text: t, source: "AlphaFold " + query.toUpperCase()}; });
   }
 
+  // A new structure: a gallery scene's background does not carry over (one the
+  // user picked does).
   function resetScene() {
-    stage.style.background = "";
+    if (background.fromScene) setBackground({center: null, edge: null, vignette: false, fromScene: false});
   }
 
   function show(text, source, preset, settings) {
@@ -131,29 +350,33 @@
     state = next;
     for (var k in S.VIEW_DEFAULTS) viewer.setTrait(k, state[k]);
     viewer.updateToolbar();
-    viewer.loadStructure();
     syncControls();
     markPreset(preset || null);
-    var atoms = (text.match(/^(ATOM  |HETATM)/gm) || []).length || parseInt(text) || 0;
-    info.textContent = source + " · " + atoms.toLocaleString() + " atoms";
+    info.textContent = source + " · reading…";
+    return viewer.loadStructure().then(function () {
+      if (state === next) info.textContent = source + " · " + viewer.atomCount.toLocaleString() + " atoms";
+    });
   }
 
   function load(sample, button) {
     [].forEach.call(document.querySelectorAll("#samples button"), function (b) { b.classList.toggle("active", b === button); });
     if (sample.query) history.replaceState(null, "", "?q=" + encodeURIComponent(sample.query.trim()));
-    loadingEl.style.display = "block";
     var ticket = ++loadTicket;
+    current = sample.data ? {kind: "text", name: sample.label} : {kind: "query", query: sample.query.trim()};
     var ready = sample.data ? Promise.resolve({text: sample.data, source: sample.label}) : fetchStructure(sample.query);
     return ready.then(function (r) {
       if (ticket !== loadTicket) return;
-      var isPDB = /^(ATOM  |HETATM)/m.test(r.text);
+      var isPDB = /^(pdb|mmcif)$/.test(S.detectFormat(r.text));
       var settings = Object.assign({}, sample.settings || {});
       if (isPDB && !("cartoon" in settings) && !("surface" in settings)) settings.cartoon = true;
       if (/^AlphaFold/.test(r.source) && !settings.cartoonColor) settings.cartoonColor = "plddt";
-      show(r.text, r.source, sample.preset, settings);
+      baseSettings = {cartoon: !!settings.cartoon, cartoonColor: settings.cartoonColor || S.VIEW_DEFAULTS.cartoonColor};
+      return show(r.text, r.source, sample.preset, settings);
     }).catch(function (e) {
-      if (ticket === loadTicket) info.textContent = "Could not load: " + e.message;
-    }).then(function () { if (ticket === loadTicket) loadingEl.style.display = "none"; });
+      if (ticket !== loadTicket) return;
+      info.textContent = "Could not load: " + e.message;
+      viewer.progressFailed("Could not load: " + e.message);
+    });
   }
 
   var samplesBox = document.getElementById("samples");
@@ -170,27 +393,84 @@
   document.getElementById("go").addEventListener("click", loadQuery);
   query.addEventListener("keydown", function (e) { if (e.key === "Enter") loadQuery(); });
 
-  // Drop a PDB / XYZ file on the viewer.
+  // Drop a PDB, mmCIF, SDF / MOL or XYZ file on the viewer (.gz too).
+  function fileText(f) {
+    if (!/\.gz$/i.test(f.name) || !window.DecompressionStream) return f.text();
+    return new Response(f.stream().pipeThrough(new DecompressionStream("gzip"))).text();
+  }
   stage.addEventListener("dragover", function (e) { e.preventDefault(); });
   stage.addEventListener("drop", function (e) {
     e.preventDefault();
     var f = e.dataTransfer.files[0];
     if (!f) return;
     var ticket = ++loadTicket;
-    f.text().then(function (t) {
+    current = {kind: "file", name: f.name};
+    fileText(f).then(function (t) {
       if (ticket !== loadTicket) return;
-      var isPDB = /^(ATOM  |HETATM)/m.test(t);
+      var isPDB = /^(pdb|mmcif)$/.test(S.detectFormat(t));
+      baseSettings = {cartoon: isPDB, cartoonColor: S.VIEW_DEFAULTS.cartoonColor};
       show(t, f.name, "glossy", isPDB ? {cartoon: true} : {});
     });
   });
 
   // --- export -------------------------------------------------------------
+  // Saves the image on the chosen background (the same gradient and vignette as
+  // on the page), or transparent.
+  function paintBackground(ctx, w, h) {
+    var b = background;
+    var center = b.center || [255, 255, 255], edge = b.edge || center;
+    // An ellipse like CSS "ellipse at 50% 42%" (farthest corner).
+    var cx = w / 2, cy = 0.42 * h, rx = Math.max(cx, w - cx) * Math.SQRT2, ry = Math.max(cy, h - cy) * Math.SQRT2;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(1, ry / rx);
+    var g = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
+    g.addColorStop(0, css(center));
+    g.addColorStop(1, css(edge));
+    ctx.fillStyle = g;
+    ctx.fillRect(-cx, -cy * rx / ry, w, h * rx / ry);
+    ctx.restore();
+  }
+
+  function paintVignette(ctx, w, h) {
+    var b = background, cx = w / 2;
+    if (b.center && b.vignette) {
+      var cy2 = 0.45 * h, rx2 = Math.max(cx, w - cx) * Math.SQRT2, ry2 = Math.max(cy2, h - cy2) * Math.SQRT2;
+      ctx.save();
+      ctx.translate(cx, cy2);
+      ctx.scale(1, ry2 / rx2);
+      var v = ctx.createRadialGradient(0, 0, 0, 0, 0, rx2);
+      v.addColorStop(0.55, "rgba(0,0,0,0)");
+      v.addColorStop(1, "rgba(0,0,0,0.22)");
+      ctx.fillStyle = v;
+      ctx.fillRect(-cx, -cy2 * rx2 / ry2, w, h * rx2 / ry2);
+      ctx.restore();
+    }
+  }
+
   document.getElementById("export").addEventListener("click", function () {
     var width = parseInt(document.getElementById("exportSize").value);
+    var transparent = document.getElementById("exportTransparent").checked;
     var button = this;
     button.disabled = true;
-    viewer.renderImage({width: width, transparent: false, background: "#ffffff"}).then(function (image) {
-      var url = URL.createObjectURL(new Blob([image.png], {type: "image/png"}));
+    viewer.renderImage({width: width, transparent: true}).then(function (image) {
+      if (transparent) return image.png;
+      return new Promise(function (resolve) {
+        var img = new Image(), url = URL.createObjectURL(new Blob([image.png], {type: "image/png"}));
+        img.onload = function () {
+          var c = document.createElement("canvas");
+          c.width = image.width; c.height = image.height;
+          var ctx = c.getContext("2d");
+          paintBackground(ctx, c.width, c.height);
+          ctx.drawImage(img, 0, 0);
+          paintVignette(ctx, c.width, c.height);
+          URL.revokeObjectURL(url);
+          c.toBlob(function (b) { b.arrayBuffer().then(resolve); }, "image/png");
+        };
+        img.src = url;
+      });
+    }).then(function (png) {
+      var url = URL.createObjectURL(new Blob([png], {type: "image/png"}));
       var a = document.createElement("a");
       a.href = url;
       a.download = "ipyspeck.png";
@@ -200,6 +480,67 @@
       setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
     }).catch(function (e) { info.textContent = "Export failed: " + e.message; })
       .then(function () { button.disabled = false; });
+  });
+
+  // --- copy as Python ---------------------------------------------------------
+  // The current structure, settings (those that differ from the defaults) and
+  // camera as ipyspeck code; stspeck.speck() takes the same keyword arguments.
+  function pyValue(v) {
+    if (v === true) return "True";
+    if (v === false) return "False";
+    if (v === null || v === undefined) return "None";
+    if (typeof v === "number") return String(Math.round(v * 1e4) / 1e4);
+    if (typeof v === "string") return JSON.stringify(v);
+    if (Array.isArray(v)) return "[" + v.map(pyValue).join(", ") + "]";
+    return "{" + Object.keys(v).map(function (k) { return JSON.stringify(k) + ": " + pyValue(v[k]); }).join(", ") + "}";
+  }
+  function pythonCode() {
+    var lines = ["from ipyspeck import Speck", ""];
+    var settings = [];
+    Object.keys(S.VIEW_DEFAULTS).forEach(function (k) {
+      if (k === "frame" && !state.frame) return;
+      if (JSON.stringify(state[k]) !== JSON.stringify(S.VIEW_DEFAULTS[k])) settings.push("    " + k + "=" + pyValue(state[k]) + ",");
+    });
+    var cam = viewer.cameraState();
+    settings.push("    camera=" + pyValue({rotation: cam.rotation.map(function (x) { return Math.round(x * 1e5) / 1e5; }),
+                                          translation: cam.translation, zoom: cam.zoom}) + ",");
+    var src = current, call;
+    var q = src.kind === "query" ? src.query : null;
+    var entry = q && /^([0-9][A-Za-z0-9]{3})(?:[-\s]*assembly\s*(\d+))?$/i.exec(q);
+    if (entry) {
+      call = 'Speck.from_pdb_id("' + entry[1].toUpperCase() + '"' + (entry[2] ? ", assembly=" + entry[2] : "") + ",";
+    } else if (q) {
+      call = 'Speck.from_alphafold("' + q.toUpperCase() + '",';
+    } else if (src.kind === "scene" && src.source.pdb) {
+      call = 'Speck.from_pdb_id("' + src.source.pdb + '"' + (src.source.assembly ? ", assembly=" + src.source.assembly : "") + ",";
+    } else if (src.kind === "scene" && src.source.alphafold) {
+      call = 'Speck.from_alphafold("' + src.source.alphafold + '",';
+    } else if (src.kind === "file") {
+      call = 'Speck.from_file("' + src.name.replace(/"/g, "") + '",';
+    } else {
+      call = 'Speck(data=open("' + (src.kind === "scene" ? src.source.file.split("/").pop() : "structure.xyz") + '").read(),';
+    }
+    lines.push("w = " + call);
+    lines = lines.concat(settings);
+    lines.push(")");
+    if (background.center) {
+      lines.push("", "# Background of the page (used by save_image):");
+      lines.push('w.save_image("figure.png", width=3000, transparent=False, background="' + rgbHex(background.center) + '")');
+    }
+    lines.push("w");
+    return lines.join("\n");
+  }
+  document.getElementById("copyPython").addEventListener("click", function () {
+    var code = pythonCode(), pre = document.getElementById("pythonCode"), button = this;
+    pre.textContent = code;
+    pre.hidden = false;
+    var done = function (ok) {
+      button.textContent = ok ? "Copied" : "Select the code below to copy it";
+      setTimeout(function () { button.textContent = "Copy as Python"; }, 1800);
+    };
+    try {
+      navigator.clipboard.writeText(code).then(function () { done(true); }, function () { done(false); });
+    } catch (e) { done(false); }
   });
 
   // --- gallery scenes ------------------------------------------------------
@@ -221,14 +562,17 @@
   function sceneText(source) {
     if (source.alphafold) return fetchStructure(source.alphafold).then(function (r) { return r.text; });
     if (source.pdb) {
-      return fetchText(RCSB + source.pdb + ".pdb").then(function (t) {
+      // mmCIF scenes: entries too large for PDB files, and biological assemblies
+      var file = source.assembly ? source.pdb + "-assembly" + source.assembly + ".cif" :
+                 source.pdb + (source.format === "cif" ? ".cif" : ".pdb");
+      return fetchText(RCSB + file, "Downloading " + file + " from RCSB").then(function (t) {
         if (!source.chains) return t;
         return t.split("\n").filter(function (l) {
           return /^(ATOM  |HETATM)/.test(l) && source.chains.indexOf(l.charAt(21)) >= 0;
         }).join("\n") + "\nEND\n";
       });
     }
-    return fetchText(source.file);
+    return fetchText(source.file, "Loading " + source.file.split("/").pop());
   }
 
   function loadScene(name) {
@@ -236,30 +580,33 @@
     if (!sc) return;
     [].forEach.call(document.querySelectorAll("#samples button"), function (b) { b.classList.remove("active"); });
     history.replaceState(null, "", "?example=" + name);
-    loadingEl.style.display = "block";
+    current = {kind: "scene", name: name, source: sc.source};
     var ticket = ++loadTicket;
     sceneText(sc.source).then(function (text) {
       if (ticket !== loadTicket) return;
       resetScene();
       var next = freshState();
       Object.assign(next, sc.settings);
+      baseSettings = {cartoon: !!(sc.source.pdb || sc.source.alphafold), cartoonColor: sc.source.alphafold ? "plddt" : S.VIEW_DEFAULTS.cartoonColor};
       if (Object.keys(sc.colors).length) next.atomColors = sc.colors;
       next.data = text;
       next.camera = fitCamera(sc.camera, sc.size);
       state = next;
       for (var k in S.VIEW_DEFAULTS) viewer.setTrait(k, state[k]);
       viewer.updateToolbar();
-      viewer.loadStructure();
-      var bg = sc.background;
-      stage.style.background = "radial-gradient(ellipse at 50% 42%, rgb(" + bg[0].join(",") + ") 0%, rgb(" +
-                               bg[1].join(",") + ") 100%)";
+      var loaded = viewer.loadStructure();
+      setBackground({center: sc.background[0], edge: sc.background[1], vignette: !!sc.vignette, fromScene: true});
       syncControls();
       markPreset(null);
-      var atoms = (text.match(/^(ATOM  |HETATM)/gm) || []).length || parseInt(text) || 0;
-      info.textContent = /atoms/.test(sc.caption) ? sc.caption : sc.caption + " · " + atoms.toLocaleString() + " atoms";
+      return loaded.then(function () {
+        if (state !== next) return;
+        info.textContent = /atoms/.test(sc.caption) ? sc.caption : sc.caption + " · " + viewer.atomCount.toLocaleString() + " atoms";
+      });
     }).catch(function (e) {
-      if (ticket === loadTicket) info.textContent = "Could not load: " + e.message;
-    }).then(function () { if (ticket === loadTicket) loadingEl.style.display = "none"; });
+      if (ticket !== loadTicket) return;
+      info.textContent = "Could not load: " + e.message;
+      viewer.progressFailed("Could not load: " + e.message);
+    });
   }
 
   var galleryBox = document.getElementById("galleryGroups");

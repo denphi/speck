@@ -15,7 +15,9 @@ Built on [Speck](https://github.com/wwwtyro/speck) by wwwtyro.
 ## Try it live
 
 **[denphi.github.io/speck](https://denphi.github.io/speck/)** runs the same viewer in your browser. Load
-any PDB ID or AlphaFold model, change the look, export a PNG, or click a gallery image to open that scene.
+any PDB ID, biological assembly (`1STM-assembly1`) or AlphaFold model, adjust every setting from the
+sidebar (including the background), export a PNG, copy the settings as Python, or click a gallery image to
+open that scene.
 Links can open a structure or a scene directly:
 [`?q=4HHB`](https://denphi.github.io/speck/?q=4HHB),
 [`?q=Q8W3K0`](https://denphi.github.io/speck/?q=Q8W3K0) (AlphaFold),
@@ -50,7 +52,7 @@ import stspeck
 stspeck.speck(**stspeck.fetch_alphafold("Q8W3K0"), preset="cover", height=500)
 ```
 
-Structures load from files, RCSB, AlphaFold DB, ASE, RDKit or pymatgen. See the package
+Structures load from PDB, mmCIF, SDF / MOL or XYZ files, RCSB (as mmCIF, so even ribosomes load, or as whole biological assemblies), AlphaFold DB, MD trajectories (MDTraj, MDAnalysis), ASE, RDKit or pymatgen. See the package
 READMEs for every setting: [ipyspeck](jupyter/README.md) · [stspeck](streamlit/README.md).
 
 ## Gallery
@@ -68,7 +70,7 @@ READMEs for every setting: [ipyspeck](jupyter/README.md) · [stspeck](streamlit/
 </tr>
 </table>
 
-All 32 images: [ipyspeck gallery](jupyter/README.md#gallery). Each one has a notebook that reproduces
+All 41 images: [ipyspeck gallery](jupyter/README.md#gallery). Each one has a notebook that reproduces
 it exactly, with the same settings and camera: [jupyter/example/gallery](jupyter/example/gallery/). Click an
 image above to open that scene in the live demo.
 

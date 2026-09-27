@@ -1,6 +1,6 @@
 {
   "name": "ipyspeck",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "description": "Speck Jupyter Widget",
   "keywords": [
     "jupyter",
@@ -47,7 +47,7 @@
     "watch:lib": "tsc -w",
     "watch:nbextension": "webpack --watch --mode=development",
     "watch:labextension": "jupyter labextension watch .",
-    "build:core": "tsc -p ../core && tsc -p ../core/tsconfig.types.json",
+    "build:core": "tsc -p ../core && tsc -p ../core/tsconfig.types.json && node ../core/build-worker.js",
     "watch:core": "tsc -p ../core -w"
   },
   "dependencies": {
@@ -102,7 +102,7 @@
       }
     },
     "_build": {
-      "load": "static/remoteEntry.3e5e87a1f537e4d6fa5f.js",
+      "load": "static/remoteEntry.249a9c0e83d951c1f7ff.js",
       "extension": "./extension"
     }
   }

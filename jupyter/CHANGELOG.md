@@ -5,6 +5,81 @@ All notable changes to ipyspeck will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.3] - 2026-09-27
+
+### Added
+- mmCIF (PDBx/mmCIF) support: the PDB's standard format, needed for entries that PDB files cannot hold
+  (over 99,999 atoms or 62 chains, multi-character chain IDs, five-character ligand codes). Atoms, author
+  numbering, helices and sheets, all models (as frames), B-factors / pLDDT, the unit cell and
+  `_struct_conn` bonds are read; the result matches the PDB reader atom for atom
+- MDL Molfile / SDF support (V2000 and V3000), with the file's bonds; conformers become frames
+- Bonds from the file are always drawn: PDB CONECT records, mmCIF `_struct_conn` (covalent, disulfide,
+  metal) and SDF / MOL bond tables, e.g. long metal-ligand bonds that the distance rule misses
+- The format is detected from the content; `.gz` files are read directly
+- Studio floor (`floor`, `floorReflection`; off by default): a soft ground tone, contact shadow and
+  reflection under the molecule, on any background; turning it on makes room below the molecule
+- Goodsell style: the `goodsell` look (space-filling atoms in flat pastel colors per chain, thin outlines
+  between molecules and at depth steps, darker with depth, ligands in one accent color), matching the PDB-101
+  Molecule of the Month illustrations
+- Palettes (`palette`: goodsell, pastel, colorblind, viridis, grays) for chain, entity and type coloring;
+  new schemes `entity` (every copy of a molecule alike, from mmCIF) and `type` (protein / nucleic acid) for
+  cartoons, surfaces and atoms
+- Atom coloring (`atomColor`): atoms by chain, entity, type, secondary structure or rainbow, not only by
+  element; heteroatoms stay a shade darker
+- Cutaway (`cutaway`): slice away the front of the structure to show its inside, with cut atoms, bonds,
+  cartoons and surfaces capped; ambient occlusion and shadows follow the cut. `cutawayAxis` fixes the plane
+  across the molecule's x, y or z axis (default: facing the camera), and `cutawayLight` adds light entering
+  through the cut, so the inside is not lost in shadow
+- Cutaway toolbar button: slices the structure open (at the last depth used, or through the center) and
+  closes it again
+- Studio floor toolbar button: turns the floor on (at the last strength used) and off
+- Coarse models: residues modeled by their Cα (or P) atom only count as protein (nucleic acid) and are drawn
+  as one residue-sized sphere, so CA-only chains read as solid molecules
+- `outlineMode="molecules"` (outlines between molecules and at silhouettes only) and `water` (hide waters)
+- Gallery: seven new images (hemoglobin and a gold cluster on the studio floor; hemoglobin, the capsid and the
+  large ribosomal subunit in Goodsell style; the capsid cut open; the 180-copy MS2 capsid), with notebooks
+- Loading panel: large loads list each step as it runs, with what it found: downloading (demo site, with MB
+  received), unpacking the data from Python (Jupyter), reading the file (with its progress), placing atoms,
+  residues and secondary structure (e.g. "19,845 residues in 89 chains · 25% helix, 12% strand"), bonds, and
+  building the cartoon / surface; then a small "Shading n%" label until ambient occlusion has converged.
+  Loads under 0.15 s show nothing, and errors stay on the panel. Hosts can add steps with
+  `SpeckViewer.progress()`
+- Biological assemblies: `from_pdb_id("1STM", assembly=1)` / `fetch_pdb(..., assembly=1)` load the complete
+  assembly from RCSB, e.g. all 60 copies of a virus capsid (the demo site accepts `1STM-assembly1`)
+- MD trajectories: `from_mdtraj(traj, stride)` and `from_mdanalysis(universe or atom group, start, stop, step)`;
+  the topology keeps residues and chains (cartoons follow the motion) and the frames travel as binary float32
+  coordinates (12 bytes per atom and frame)
+- Gallery: the human 80S ribosome (237,685 atoms, mmCIF only) and a complete virus capsid (1STM assembly),
+  with their notebooks
+- `data` reaches the browser gzipped as a binary buffer (the 28 MB ribosome mmCIF travels as about 7 MB)
+- `set_trajectory(coords)`: frames (frames, atoms, 3) for the current structure
+- Large structures: a ribosome (237,685 atoms) renders as atoms and bonds at 60 fps. Atoms and bonds are
+  drawn with instancing (stored once instead of once per vertex: about 40x less memory for bonds), bonds are
+  found with a spatial grid (0.5 s instead of minutes; the same bonds), ambient-occlusion samples per frame
+  are limited by the scene's vertex count so huge scenes refine over more frames instead of stalling the
+  GPU, and GPU buffers are released when the scene is rebuilt
+- Stale frontend warning: when Jupyter would serve a browser extension of another version than the Python
+  package (e.g. an old copy in `~/.local/share/jupyter`), a warning names the folder; Classic Notebook also
+  shows a notice in the viewer
+- Large structures load in a Web Worker (mmCIF over 2 MB), so the page stays responsive: the ribosome now
+  blocks the main thread for about 0.3 s instead of 1.6 s; bonds are built from a dense grid into typed
+  arrays (0.1 s, a fifth of the memory); cartoons of huge structures use a coarser tube to stay under about
+  6.5M vertices (every gallery structure keeps full quality); atoms and bonds are drawn as triangle strips
+  (4 and 14 vertices instead of 6 and 36)
+- Exports reuse the viewer's WebGL context instead of building a second renderer, so large structures are not
+  held twice in GPU memory; render targets are released on resize (they leaked before)
+
+### Changed
+- Secondary structure from the file is used per chain; chains it does not cover (for example the copies in
+  some assembly files) get it from backbone H-bonds instead of being drawn as coil
+- `from_pdb_id` downloads mmCIF (`format="pdb"` for the legacy file), so every RCSB entry loads, including
+  ribosomes and other large complexes; `from_file` reads `.cif`, `.mmcif`, `.sdf` and `.mol` (and `.gz`)
+- `from_rdkit` passes RDKit's own bonds (a Molfile) instead of guessing them from distances
+
+### Fixed
+- A camera restored by the host (a saved `camera`, a gallery scene) was replaced by the default view when a
+  large structure finished loading after a setting such as `autoRotate` changed
+
 ## [0.8.2] - 2026-09-27
 
 ### Added

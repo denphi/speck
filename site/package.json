@@ -1,10 +1,10 @@
 {
   "name": "speck-site",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "private": true,
   "description": "GitHub Pages demo for ipyspeck / stspeck; builds the shared viewer from ../core into ../docs",
   "scripts": {
-    "build:core": "tsc -p ../core && tsc -p ../core/tsconfig.types.json",
+    "build:core": "tsc -p ../core && tsc -p ../core/tsconfig.types.json && node ../core/build-worker.js",
     "build": "npm run build:core && webpack --mode=production"
   },
   "devDependencies": {
