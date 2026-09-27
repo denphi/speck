@@ -9,7 +9,7 @@ materials, shadows, fog, outlines, highlighting, trajectories and unit cells.
 pip install stspeck      # Python 3.8+, Streamlit 1.20+
 ```
 
-![Speck 0.8](https://raw.githubusercontent.com/denphi/speck/master/media/banner.jpg)
+![ipyspeck 0.8](https://raw.githubusercontent.com/denphi/speck/master/media/banner.jpg)
 
 ```python
 import streamlit as st

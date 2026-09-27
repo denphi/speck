@@ -4,7 +4,7 @@ import streamlit as st
 import stspeck
 
 st.set_page_config(page_title="stspeck", layout="wide")
-st.title("Speck for Streamlit")
+st.title("stspeck")
 
 
 @st.cache_data

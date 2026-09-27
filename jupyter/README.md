@@ -24,7 +24,7 @@ A Jupyter Widget for rendering beautiful molecular structures using Speck.
 
 Speck is a molecule renderer with the goal of producing figures that are as attractive as they are practical. Express your molecule clearly _and_ with style.
 
-![Speck 0.8](https://raw.githubusercontent.com/denphi/speck/master/media/banner.jpg)
+![ipyspeck 0.8](https://raw.githubusercontent.com/denphi/speck/master/media/banner.jpg)
 
 ipyspeck brings Speck to Jupyter Notebook and JupyterLab: ambient-occlusion rendering of atoms and bonds, protein and nucleic-acid cartoons, molecular surfaces (optionally transparent), metallic and glossy materials, shadows, depth fog, highlighting, trajectories, unit cells and high-resolution image and animation export. The same viewer is available for Streamlit as [stspeck](https://pypi.org/project/stspeck/).
 
