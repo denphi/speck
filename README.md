@@ -15,6 +15,7 @@ This repository also hosts two Python packages built on the same renderer:
 | [`jupyter/`](jupyter/) | **ipyspeck** | Jupyter Notebook / JupyterLab (ipywidgets 7 and 8) |
 | [`streamlit/`](streamlit/) | **stspeck** | Streamlit apps |
 | [`core/`](core/) | — | Shared renderer and viewer used by both |
+| [`site/`](site/) | — | Live demo, built into `docs/` for GitHub Pages |
 
 Both add cartoons, molecular surfaces (optionally transparent), metallic and glossy
 materials, shadows, fog, highlighting, trajectories, unit cells and high-resolution
@@ -22,7 +23,10 @@ export on top of the ambient-occlusion renderer described below.
 
 ## Try it live
 
-Try speck out live in your browser here: http://wwwtyro.github.io/speck/
+Try the new viewer live in your browser, with cartoons, surfaces, materials and depth of field:
+https://denphi.github.io/speck/ (load any PDB ID or AlphaFold model).
+
+The original Speck demo by wwwtyro is at http://wwwtyro.github.io/speck/.
 
 ## Features
 

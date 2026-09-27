@@ -1,0 +1,18 @@
+{
+  "name": "speck-site",
+  "version": "0.8.1",
+  "private": true,
+  "description": "GitHub Pages demo for ipyspeck / stspeck; builds the shared viewer from ../core into ../docs",
+  "scripts": {
+    "build:core": "tsc -p ../core && tsc -p ../core/tsconfig.types.json",
+    "build": "npm run build:core && webpack --mode=production"
+  },
+  "devDependencies": {
+    "css-loader": "^6.9.1",
+    "style-loader": "^3.3.4",
+    "ts-loader": "^9.5.1",
+    "typescript": "~5.3.3",
+    "webpack": "^5.90.0",
+    "webpack-cli": "^5.1.4"
+  }
+}
