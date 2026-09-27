@@ -26,9 +26,14 @@ stspeck.speck(**stspeck.from_ase(atoms), preset="metal")   # also from_rdkit, fr
 
 - **Settings**: every ipyspeck setting is a keyword argument; see `stspeck.SETTINGS`
   for names and defaults, and `stspeck.PRESETS` for named looks (`preset="cover"`).
-- **Toolbar**: styles, cartoon / surface / ligand toggles, standard views, color
-  schemes and a camera button that downloads a high-resolution PNG
+- **Toolbar**: styles, a looks menu, cartoon / surface / ligand toggles, standard views,
+  auto-rotate, tap to focus (or Alt-click), a depth-of-field toggle, a color menu for cartoon, surface and atoms,
+  and a camera button that downloads a high-resolution PNG
   (`export_width=3000`, `export_scale=...`). Toolbar choices persist across reruns.
+- **Colors**: `colorScheme="jmol"` (speck, jmol, rasmol, newcpk) and per-element
+  `atomColors={"Au": "#ffcc33"}` (`'#rrggbb'` or `[r, g, b]` in 0 - 1).
+- **Touch and keyboard**: one finger rotates, two fingers pinch to zoom and pan; arrows
+  rotate, Shift+arrows pan, + / - zoom, 0 recenters, F focuses at the center.
 - **State**: with `return_state=True` the call returns the camera, the current
   settings and `nframes`; pass the camera back as `camera=` to restore a view.
 - **Trajectories**: multi-frame XYZ or multi-model PDB; drive `frame=` with a slider

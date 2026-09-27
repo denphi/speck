@@ -13,6 +13,7 @@ const speckPDB = require('./pdb.js');
 const speckCartoon = require('./cartoon.js');
 const speckSelect = require('./select.js');
 const speckXYZ = require('./xyz.js');
+const speckElements = require('./elements.js');
 
 // Model traits mirrored into the Speck view, with their defaults (these match
 // the Python traits in ipyspeck/speck.py).
@@ -26,6 +27,9 @@ export const VIEW_DEFAULTS: { [key: string]: any } = {
   bondShade: 0.5,
   atomShade: 0.5,
   ligands: true,
+  // colors
+  colorScheme: 'speck',
+  atomColors: {},
   // highlighting
   highlight: {},
   highlightColor: '',
@@ -79,6 +83,8 @@ export const VIEW_DEFAULTS: { [key: string]: any } = {
   cellColor: '#666666',
   cellRadius: 0.12,
   frame: 0,
+  // interaction
+  autoRotate: false,
 };
 export const VIEW_TRAITS = Object.keys(VIEW_DEFAULTS);
 
@@ -110,13 +116,37 @@ const REBUILD_TRAITS = [
   'cellRadius',
 ];
 
-// Toolbar presets (only the traits listed change).
+// Toolbar styles: geometry only, so they combine with any look.
 const PRESETS: { [key: string]: { [key: string]: any } } = {
-  stickball: { atomScale: 0.24, relativeAtomScale: 0.64, bondScale: 0.5, bonds: true, ao: 0.75, outline: 0 },
-  spacefill: { atomScale: 0.6, relativeAtomScale: 1.0, bonds: false, ao: 0.75, outline: 0 },
-  licorice: { atomScale: 0.1, relativeAtomScale: 0, bondScale: 1, bonds: true, ao: 0.75, outline: 0 },
-  toon: { ao: 0, outline: 1 },
+  stickball: { atomScale: 0.24, relativeAtomScale: 0.64, bondScale: 0.5, bonds: true },
+  spacefill: { atomScale: 0.6, relativeAtomScale: 1.0, bonds: false },
+  licorice: { atomScale: 0.1, relativeAtomScale: 0, bondScale: 1, bonds: true },
 };
+
+// Looks: lighting and material presets (the same as apply_preset() in
+// Python). Each one starts from 'default', so no setting is left behind.
+export const LOOKS: { [key: string]: { [key: string]: any } } = {
+  default: {
+    ao: 0.75, brightness: 0.5, atomShade: 0.5, bondShade: 0.5, cartoonShade: 0.2, surfaceShade: 0.1,
+    outline: 0.0, outlineWidth: 1.0, outlineColor: '#000000', specular: 0.0, gloss: 0.5, metallic: 0.0,
+    metallicAtoms: 'all', shadows: 0.0, rim: 0.0, fog: 0.0, saturation: 1.0, tonemap: false, dofStrength: 0.0,
+  },
+  matte: { ao: 0.9, brightness: 0.55 },
+  glossy: { specular: 0.6, gloss: 0.65, rim: 0.2, tonemap: true },
+  toon: { ao: 0.3, outline: 1.0, outlineWidth: 1.5, atomShade: 0.3, cartoonShade: 0.1 },
+  cover: {
+    ao: 1.0, brightness: 0.55, specular: 0.5, gloss: 0.6, shadows: 0.6, rim: 0.35, fog: 0.35, saturation: 1.15,
+    tonemap: true, outline: 0.2, atomShade: 0.25, cartoonShade: 0.05,
+  },
+  metal: { metallic: 1.0, metallicAtoms: 'metals', gloss: 0.75, specular: 0.6, atomShade: 0.1, tonemap: true },
+  glass: { surface: true, surfaceOpacity: 0.35, surfaceColor: '#e8e4dc', specular: 0.4, gloss: 0.7, cartoon: true },
+};
+const LOOK_LABELS: { [key: string]: string } = {
+  default: 'Default', matte: 'Matte', glossy: 'Glossy', toon: 'Toon (outlines)', cover: 'Cover (shadows, fog)',
+  metal: 'Metal', glass: 'Glass surface',
+};
+
+type MenuSection = (title: string, items: [string, string][], current: string, pick: (v: string) => void) => void;
 
 // 16x16 icons; drawn with currentColor so CSS controls the state colors.
 const ICONS: { [key: string]: string } = {
@@ -137,17 +167,36 @@ const ICONS: { [key: string]: string } = {
   ligands:
     '<path d="M 5.5 2 L 9.5 2 L 11.5 5.5 L 9.5 9 L 5.5 9 L 3.5 5.5 Z" fill="none" stroke-width="1.4"/>' +
     '<path d="M 9.5 9 L 11.5 12.5" fill="none" stroke-width="1.4"/><circle cx="12" cy="13.5" r="1.8" stroke="none"/>',
+  // View cube: the same isometric cube with the face you will look at filled.
   front:
-    '<path d="M 0 5 h 10 v 10 h -10 v -10" fill="none"/><path d="M 4 0 h 10 l -4 4 h -10 l -4 4" stroke="none"/>' +
-    '<path d="M 11 5 l 4 -4 v 10 l -4 4 v -10" stroke="none"/>',
+    '<path d="M 2 4.8 L 8 8 L 8 14.4 L 2 11.2 Z" stroke="none"/>' +
+    '<path d="M 8 1.6 L 14 4.8 L 8 8 L 2 4.8 Z M 2 4.8 L 8 8 L 8 14.4 L 2 11.2 Z M 8 8 L 14 4.8 L 14 11.2 L 8 14.4 Z" fill="none" stroke-width="1.2" stroke-linejoin="round"/>',
   top:
-    '<path d="M 0 5 h 10 v 10 h -10 v -10" stroke="none"/><path d="M 4 0 h 10 l -4 4 h -10 l -4 4" fill="none"/>' +
-    '<path d="M 11 5 l 4 -4 v 10 l -4 4 v -10" stroke="none"/>',
+    '<path d="M 8 1.6 L 14 4.8 L 8 8 L 2 4.8 Z" stroke="none"/>' +
+    '<path d="M 8 1.6 L 14 4.8 L 8 8 L 2 4.8 Z M 2 4.8 L 8 8 L 8 14.4 L 2 11.2 Z M 8 8 L 14 4.8 L 14 11.2 L 8 14.4 Z" fill="none" stroke-width="1.2" stroke-linejoin="round"/>',
   right:
-    '<path d="M 0 5 h 10 v 10 h -10 v -10" stroke="none"/><path d="M 4 0 h 10 l -4 4 h -10 l -4 4" stroke="none"/>' +
-    '<path d="M 11 5 l 4 -4 v 10 l -4 4 v -10" fill="none"/>',
+    '<path d="M 8 8 L 14 4.8 L 14 11.2 L 8 14.4 Z" stroke="none"/>' +
+    '<path d="M 8 1.6 L 14 4.8 L 8 8 L 2 4.8 Z M 2 4.8 L 8 8 L 8 14.4 L 2 11.2 Z M 8 8 L 14 4.8 L 14 11.2 L 8 14.4 Z" fill="none" stroke-width="1.2" stroke-linejoin="round"/>',
   center:
     '<path d="M 1 5 v -4 h 4 M 15 5 v -4 h -4 M 1 11 v 4 h 4 M 11 15 h 4 v -4 M 5 8 l 3 -3 l 3 3 l -3 3 l -3 -3" fill="none"/>',
+  // Sparkle: looks (lighting and material presets)
+  looks:
+    '<path stroke="none" d="M 6.5 1 L 7.9 5.1 L 12 6.5 L 7.9 7.9 L 6.5 12 L 5.1 7.9 L 1 6.5 L 5.1 5.1 Z"/>' +
+    '<path stroke="none" d="M 12.5 9.5 L 13.2 11.3 L 15 12 L 13.2 12.7 L 12.5 14.5 L 11.8 12.7 L 10 12 L 11.8 11.3 Z"/>',
+  // Circular arrow around a dot: auto-rotate
+  spin:
+    '<path d="M 13.2 5.2 A 6 6 0 1 0 14 9" fill="none" stroke-width="1.5" stroke-linecap="round"/>' +
+    '<path stroke="none" d="M 15.2 1.8 L 14.8 7 L 10.2 4.6 Z"/>' +
+    '<circle cx="8" cy="8" r="1.6" stroke="none"/>',
+  // Lens aperture: depth of field on / off
+  dof:
+    '<circle cx="8" cy="8" r="6.6" fill="none" stroke-width="1.3"/>' +
+    '<path d="M 8 1.4 L 11.3 7 M 13.7 4.7 L 9.9 10.4 M 13.7 11.3 L 6.6 11 M 8 14.6 L 4.7 9 M 2.3 11.3 L 6.1 5.6 M 2.3 4.7 L 9.4 5" fill="none" stroke-width="1.2"/>',
+  // Crosshair target (distinct from the corner brackets of "center").
+  focus:
+    '<circle cx="8" cy="8" r="4.6" fill="none" stroke-width="1.4"/>' +
+    '<path d="M 8 0.8 V 3.4 M 8 12.6 V 15.2 M 0.8 8 H 3.4 M 12.6 8 H 15.2" fill="none" stroke-width="1.4"/>' +
+    '<circle cx="8" cy="8" r="1.3" stroke="none"/>',
   palette:
     '<path stroke="none" d="M 8 0 C 3.6 0 0 3.6 0 8 C 0 12.4 3.6 16 8 16 C 8.7 16 9.3 15.4 9.3 14.6 C 9.3 14.3 9.2 14 9 13.7 ' +
     'C 8.7 13.5 8.6 13.2 8.6 12.9 C 8.6 12.1 9.2 11.5 10 11.5 L 11.6 11.5 C 14 11.5 16 9.5 16 7.1 C 16 3.2 12.4 0 8 0 Z ' +
@@ -194,7 +243,19 @@ export class SpeckViewer {
   private view: any;
   private renderer: any = null;
   private needReset = false;
-  private currentSchema = 'speck';
+  private focusMode = false;
+  private focusButton: HTMLElement | null = null;
+  private colorButton: HTMLElement | null = null;
+  private lookButton: HTMLElement | null = null;
+  private menuEl!: HTMLDivElement;
+  private menuOwner: HTMLElement | null = null;
+  private menuBuild: ((section: MenuSection) => void) | null = null;
+  private lastFrameTime = 0;
+  private spinSamples = 32;
+  private lastDofStrength = 1.0;
+  private spinFrames = 0;
+  private spinTime = 0;
+  private pressAt: { x: number; y: number } | null = null;
   private canvas: HTMLCanvasElement;
   private toolbarEl!: HTMLDivElement;
   private statusEl!: HTMLDivElement;
@@ -214,11 +275,29 @@ export class SpeckViewer {
     for (const trait of VIEW_TRAITS) {
       this.view[trait] = host.get(trait);
     }
+    this.applyElementColors();
 
     el.classList.add('ipyspeck-widget');
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'ipyspeck-canvas';
     this.canvas.addEventListener('dblclick', () => this.center());
+    // Tap to focus: in focus mode, or with Alt/Option held. A drag rotates.
+    this.canvas.addEventListener('pointerdown', (e) => {
+      this.pressAt = { x: e.clientX, y: e.clientY };
+    });
+    this.canvas.addEventListener('click', (e) => {
+      const press = this.pressAt;
+      this.pressAt = null;
+      if (!(this.focusMode || e.altKey)) return;
+      if (press && Math.abs(e.clientX - press.x) + Math.abs(e.clientY - press.y) > 4) return;
+      const box = this.canvas.getBoundingClientRect();
+      this.focusAt((e.clientX - box.left) / box.width, 1 - (e.clientY - box.top) / box.height);
+    });
+    // Keyboard: arrows rotate (Shift pans), + / - zoom, 0 recenters, F focuses at the center.
+    this.canvas.tabIndex = 0;
+    this.canvas.setAttribute('role', 'img');
+    this.canvas.setAttribute('aria-label', 'Molecule viewer. Arrow keys rotate, Shift+arrows pan, + and - zoom, 0 recenters.');
+    this.canvas.addEventListener('keydown', (e) => this.onKey(e));
     el.appendChild(this.canvas);
     this.buildToolbar();
 
@@ -260,6 +339,7 @@ export class SpeckViewer {
       this.resizeObserver.disconnect();
     }
     window.removeEventListener('resize', this.reflowHandler);
+    document.removeEventListener('pointerdown', this.closeMenuHandler);
     if (this.removeInteractions) {
       this.removeInteractions();
     }
@@ -277,15 +357,19 @@ export class SpeckViewer {
   private buildToolbar() {
     this.toolbarEl = document.createElement('div');
     this.toolbarEl.className = 'ipyspeck-toolbar';
+    this.toolbarEl.setAttribute('role', 'toolbar');
+    this.toolbarEl.setAttribute('aria-label', 'Molecule viewer');
     // Keep toolbar clicks from rotating or zooming the molecule.
-    this.toolbarEl.addEventListener('mousedown', (e) => e.stopPropagation());
+    this.toolbarEl.addEventListener('pointerdown', (e) => e.stopPropagation());
     this.toolbarEl.addEventListener('dblclick', (e) => e.stopPropagation());
 
     const styles = this.addGroup();
     this.addButton(styles, 'stickball', 'Ball and stick', () => this.host.set(PRESETS.stickball));
     this.addButton(styles, 'spacefill', 'Space filling', () => this.host.set(PRESETS.spacefill));
     this.addButton(styles, 'licorice', 'Licorice', () => this.host.set(PRESETS.licorice));
-    this.addButton(styles, 'toon', 'Toon (outlines, no shadows)', () => this.host.set(PRESETS.toon));
+    this.lookButton = this.addButton(styles, 'looks', 'Looks', () => this.toggleLookMenu());
+    this.lookButton.setAttribute('aria-haspopup', 'menu');
+    this.lookButton.setAttribute('aria-expanded', 'false');
 
     const representations = this.addGroup();
     this.toggles.cartoon = this.addButton(representations, 'cartoon', 'Cartoon', () => this.toggle('cartoon'));
@@ -297,9 +381,14 @@ export class SpeckViewer {
     this.addButton(views, 'top', 'Top view', () => this.topview());
     this.addButton(views, 'right', 'Right view', () => this.rightview());
     this.addButton(views, 'center', 'Recenter (double-click)', () => this.center());
+    this.toggles.autoRotate = this.addButton(views, 'spin', 'Auto-rotate', () => this.toggle('autoRotate'));
 
     const output = this.addGroup();
-    this.addButton(output, 'palette', 'Next color scheme', () => this.switchColorSchema());
+    this.focusButton = this.addButton(output, 'focus', 'Tap to focus (or Alt-click)', () => this.toggleFocusMode());
+    this.toggles.dofStrength = this.addButton(output, 'dof', 'Depth of field (macro)', () => this.toggleDepthOfField());
+    this.colorButton = this.addButton(output, 'palette', 'Colors', () => this.toggleColorMenu());
+    this.colorButton.setAttribute('aria-haspopup', 'menu');
+    this.colorButton.setAttribute('aria-expanded', 'false');
     this.addButton(output, 'camera', 'Save PNG', () => (this.host.snapshot ? this.host.snapshot() : this.snapshot()));
 
     this.el.appendChild(this.toolbarEl);
@@ -307,6 +396,16 @@ export class SpeckViewer {
     this.statusEl = document.createElement('div');
     this.statusEl.className = 'ipyspeck-status';
     this.el.appendChild(this.statusEl);
+
+    this.menuEl = document.createElement('div');
+    this.menuEl.className = 'ipyspeck-menu';
+    this.menuEl.setAttribute('role', 'menu');
+    this.menuEl.style.display = 'none';
+    this.menuEl.addEventListener('pointerdown', (e) => e.stopPropagation());
+    this.menuEl.addEventListener('dblclick', (e) => e.stopPropagation());
+    this.menuEl.addEventListener('keydown', (e) => this.onMenuKey(e));
+    this.el.appendChild(this.menuEl);
+    document.addEventListener('pointerdown', this.closeMenuHandler);
     this.updateToolbar();
   }
 
@@ -323,11 +422,13 @@ export class SpeckViewer {
   }
 
   private addButton(group: HTMLElement, icon: string, title: string, onClick: () => void): HTMLElement {
-    const button = document.createElement('div');
+    const button = document.createElement('button');
+    button.type = 'button';
     button.className = 'ipyspeck-button';
     button.title = title;
+    button.setAttribute('aria-label', title);
     button.innerHTML =
-      '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" stroke="currentColor">' +
+      '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" stroke="currentColor" aria-hidden="true" focusable="false">' +
       ICONS[icon] +
       '</svg>';
     button.addEventListener('click', (e) => {
@@ -341,7 +442,12 @@ export class SpeckViewer {
   updateToolbar() {
     this.toolbarEl.style.display = this.host.get('toolbar') === false ? 'none' : '';
     for (const trait in this.toggles) {
-      this.toggles[trait].classList.toggle('active', !!this.host.get(trait));
+      const on = !!this.host.get(trait);
+      this.toggles[trait].classList.toggle('active', on);
+      this.toggles[trait].setAttribute('aria-pressed', String(on));
+    }
+    if (this.focusButton) {
+      this.focusButton.setAttribute('aria-pressed', String(this.focusMode));
     }
   }
 
@@ -357,6 +463,13 @@ export class SpeckViewer {
     speckView.resolve(this.view);
     if (trait === 'frame' && this.system) {
       speckSystem.setFrame(this.system, this.view.frame);
+      this.rebuild();
+    }
+    if (trait === 'autoRotate' && !value) {
+      this.scheduleCameraSync();
+    }
+    if (trait === 'colorScheme' || trait === 'atomColors') {
+      this.applyElementColors();
       this.rebuild();
     }
     if (trait === 'aoRes' && this.renderer) {
@@ -499,29 +612,261 @@ export class SpeckViewer {
     }
   }
 
-  setAtomsColor(atoms: any) {
-    let changed = false;
-    for (const atom in atoms) {
-      if (atom in this.view.elements) {
-        this.view.elements[atom].color = atoms[atom];
-        changed = true;
-      }
-    }
-    if (changed) {
-      this.rebuild();
+  // --- focus ----------------------------------------------------------------
+
+  toggleFocusMode() {
+    this.focusMode = !this.focusMode;
+    this.canvas.classList.toggle('focusing', this.focusMode);
+    if (this.focusButton) {
+      this.focusButton.classList.toggle('active', this.focusMode);
+      this.focusButton.setAttribute('aria-pressed', String(this.focusMode));
     }
   }
 
+  // Depth of field off, or back on at the last strength used (1.0 at first).
+  toggleDepthOfField() {
+    const strength = this.host.get('dofStrength');
+    if (strength > 0) {
+      this.lastDofStrength = strength;
+      this.host.set({ dofStrength: 0 });
+    } else {
+      this.host.set({ dofStrength: this.lastDofStrength });
+    }
+  }
+
+  // --- keyboard -------------------------------------------------------------
+
+  private onKey(e: KeyboardEvent) {
+    const step = 30; // pixels of an equivalent drag
+    const arrows: { [key: string]: [number, number] } = {
+      ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step],
+    };
+    if (e.key in arrows) {
+      const [dx, dy] = arrows[e.key];
+      if (e.shiftKey) {
+        const inverseZoom = 0.001 / this.view.zoom;
+        const t = this.view.translation;
+        this.view.translation = { x: t.x - dx * inverseZoom, y: t.y + dy * inverseZoom };
+      } else {
+        speckView.rotate(this.view, dx, dy);
+      }
+    } else if (e.key === '+' || e.key === '=') {
+      this.zoomTo(this.view.zoom / 0.9);
+    } else if (e.key === '-' || e.key === '_') {
+      this.zoomTo(this.view.zoom * 0.9);
+    } else if (e.key === '0') {
+      this.center();
+      e.preventDefault();
+      return;
+    } else if (e.key === 'f' || e.key === 'F') {
+      if (!this.focusAt(0.5, 0.5)) {
+        this.setStatus('Nothing at the center to focus on');
+        setTimeout(() => this.setStatus(''), 1500);
+      }
+      e.preventDefault();
+      return;
+    } else {
+      return;
+    }
+    e.preventDefault();
+    speckView.resolve(this.view);
+    this.needReset = true;
+    this.scheduleCameraSync();
+  }
+
+  // Focuses at a point of the canvas (fx, fy in [0, 1] from the bottom-left):
+  // the depth under it becomes the focal plane. Returns false over the
+  // background. Turns depth of field on if it was off.
+  focusAt(fx: number, fy: number): boolean {
+    if (!this.renderer || !this.system) return false;
+    const depth = this.renderer.pickDepth(this.view, fx, fy);
+    if (depth === null) return false;
+    const changes: { [trait: string]: any } = { dofPosition: Math.round(depth * 1e4) / 1e4, dofFocus: {} };
+    if (!(this.view.dofStrength > 0)) changes.dofStrength = this.lastDofStrength;
+    this.host.set(changes);
+    this.showReticle(fx, fy);
+    return true;
+  }
+
+  private showReticle(fx: number, fy: number) {
+    const r = document.createElement('div');
+    r.className = 'ipyspeck-reticle';
+    r.style.left = fx * this.canvas.clientWidth + 'px';
+    r.style.top = (1 - fy) * this.canvas.clientHeight + 'px';
+    this.el.appendChild(r);
+    setTimeout(() => r.remove(), 900);
+  }
+
+  // --- menus ----------------------------------------------------------------
+
+  private closeMenuHandler = (e: Event) => {
+    if (this.menuOwner && !this.menuEl.contains(e.target as Node) && !this.menuOwner.contains(e.target as Node)) {
+      this.closeMenu(false);
+    }
+  };
+
+  private closeMenu(refocus: boolean) {
+    const owner = this.menuOwner;
+    this.menuEl.style.display = 'none';
+    this.menuOwner = null;
+    this.menuBuild = null;
+    if (owner) {
+      owner.setAttribute('aria-expanded', 'false');
+      if (refocus) owner.focus();
+    }
+  }
+
+  // Opens (or closes, if already open) a popup menu below a toolbar button.
+  private toggleMenu(owner: HTMLElement | null, label: string, build: (section: MenuSection) => void) {
+    const wasOpen = this.menuOwner === owner;
+    if (this.menuOwner) this.closeMenu(false);
+    if (wasOpen || !owner) return;
+    this.menuOwner = owner;
+    this.menuBuild = build;
+    this.menuEl.setAttribute('aria-label', label);
+    this.renderMenu();
+    this.menuEl.style.display = '';
+    owner.setAttribute('aria-expanded', 'true');
+    // Below the button, right-aligned with it, kept inside the viewer.
+    const box = this.el.getBoundingClientRect();
+    const b = owner.getBoundingClientRect();
+    const width = this.menuEl.offsetWidth;
+    const left = Math.max(6, Math.min(b.right - box.left - width, box.width - width - 6));
+    this.menuEl.style.left = left + 'px';
+    this.menuEl.style.right = 'auto';
+    this.menuEl.style.top = b.bottom - box.top + 4 + 'px';
+    const first = (this.menuEl.querySelector('.active') || this.menuEl.querySelector('button')) as HTMLElement | null;
+    if (first) first.focus();
+  }
+
+  private renderMenu() {
+    const menu = this.menuEl;
+    const build = this.menuBuild;
+    if (!build) return;
+    menu.innerHTML = '';
+    build((title, items, current, pick) => {
+      if (title) {
+        const h = document.createElement('div');
+        h.className = 'ipyspeck-menu-title';
+        h.setAttribute('role', 'presentation');
+        h.textContent = title;
+        menu.appendChild(h);
+      }
+      for (const [value, label] of items) {
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'ipyspeck-menu-item' + (value === current ? ' active' : '');
+        item.setAttribute('role', 'menuitemradio');
+        item.setAttribute('aria-checked', String(value === current));
+        item.setAttribute('aria-label', title ? title + ': ' + label : label);
+        item.dataset.value = title + ':' + value;
+        item.textContent = label;
+        item.addEventListener('click', () => {
+          pick(value);
+          this.renderMenu();
+          const again = this.menuEl.querySelector('[data-value="' + title + ':' + value + '"]') as HTMLElement | null;
+          if (again) again.focus();
+        });
+        menu.appendChild(item);
+      }
+    });
+  }
+
+  // Up / Down / Home / End move between items, Escape closes.
+  private onMenuKey(e: KeyboardEvent) {
+    const items = Array.from(this.menuEl.querySelectorAll('button')) as HTMLElement[];
+    const at = items.indexOf(document.activeElement as HTMLElement);
+    let next = -1;
+    if (e.key === 'ArrowDown') next = (at + 1) % items.length;
+    else if (e.key === 'ArrowUp') next = (at - 1 + items.length) % items.length;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = items.length - 1;
+    else if (e.key === 'Escape' || e.key === 'Tab') {
+      if (e.key === 'Escape') e.preventDefault();
+      this.closeMenu(e.key === 'Escape');
+      return;
+    } else return;
+    e.preventDefault();
+    if (items[next]) items[next].focus();
+  }
+
+  // --- looks ----------------------------------------------------------------
+
+  // A look's settings; from the toolbar, depth of field (a camera choice,
+  // e.g. just set by tap to focus) is kept.
+  private lookSettings(name: string): { [key: string]: any } {
+    const look: { [key: string]: any } = { ...LOOKS.default, ...LOOKS[name] };
+    delete look.dofStrength;
+    return look;
+  }
+
+  // The look whose settings all match the current ones, or ''.
+  currentLook(): string {
+    for (const name in LOOKS) {
+      const look = this.lookSettings(name);
+      if (Object.keys(look).every((k) => this.host.get(k) === look[k])) return name;
+    }
+    return '';
+  }
+
+  applyLook(name: string) {
+    if (name in LOOKS) this.host.set(this.lookSettings(name));
+  }
+
+  toggleLookMenu() {
+    this.toggleMenu(this.lookButton, 'Looks', (section) =>
+      section('', Object.keys(LOOKS).map((k) => [k, LOOK_LABELS[k]] as [string, string]), this.currentLook(),
+        (v) => this.applyLook(v)));
+  }
+
+  // --- colors ---------------------------------------------------------------
+
+  // Color schemes for what is shown: cartoon and surface schemes (synced as
+  // cartoonColor / surfaceColor) and the element palettes for atoms.
+  toggleColorMenu() {
+    this.toggleMenu(this.colorButton, 'Colors', (section) => {
+      const residue: [string, string][] = [
+        ['ss', 'Secondary structure'], ['chain', 'Chain'], ['rainbow', 'Rainbow N→C'], ['plddt', 'AlphaFold confidence'],
+      ];
+      if (this.host.get('cartoon')) {
+        section('Cartoon', residue, this.host.get('cartoonColor'), (v) => this.host.set({ cartoonColor: v }));
+      }
+      if (this.host.get('surface')) {
+        section('Surface', [['element', 'Element'], ...residue, ['#eef2f8', 'Glass white']],
+          this.host.get('surfaceColor'), (v) => this.host.set({ surfaceColor: v }));
+      }
+      const palettes: { [name: string]: string } = { speck: 'Speck', jmol: 'Jmol', rasmol: 'RasMol', newcpk: 'New CPK' };
+      section('Atoms', Object.keys(speckColors).map((k) => [k, palettes[k] || k] as [string, string]),
+        this.host.get('colorScheme'), (v) => this.setColorSchema(v));
+    });
+  }
+
+  // Element colors = the colorScheme palette, then the atomColors overrides
+  // ('#rrggbb' or [r, g, b] in 0 - 1).
+  private applyElementColors() {
+    const palette = speckColors[this.view.colorScheme] || speckColors.speck;
+    const custom = this.view.atomColors || {};
+    for (const symbol in this.view.elements) {
+      const base = palette[symbol] || speckElements[symbol].color;
+      this.view.elements[symbol].color = speckSelect.parseColor(custom[symbol], base).slice();
+    }
+  }
+
+  // Adds per-element colors to atomColors (synced with the host).
+  setAtomsColor(atoms: any) {
+    this.host.set({ atomColors: { ...(this.host.get('atomColors') || {}), ...atoms } });
+  }
+
+  // Switches palette and clears the atomColors overrides.
   setColorSchema(schema: string) {
     if (schema in speckColors) {
-      this.currentSchema = schema;
-      this.setAtomsColor(speckColors[schema]);
+      this.host.set({ colorScheme: schema, atomColors: {} });
     }
   }
 
   switchColorSchema() {
     const schemas = Object.keys(speckColors);
-    const next = schemas[(schemas.indexOf(this.currentSchema) + 1) % schemas.length];
+    const next = schemas[(schemas.indexOf(this.host.get('colorScheme')) + 1) % schemas.length];
     this.setColorSchema(next);
   }
 
@@ -711,11 +1056,34 @@ export class SpeckViewer {
     if (!this.renderer) {
       return;
     }
-    if (this.needReset) {
-      this.renderer.reset();
-      this.needReset = false;
+    const now = performance.now();
+    const dt = this.lastFrameTime ? now - this.lastFrameTime : 16;
+    this.lastFrameTime = now;
+    if (this.view.autoRotate && this.system) {
+      // 20 degrees per second, independent of the frame rate. Each frame is
+      // fully shaded with AO samples; their number is re-chosen from the mean
+      // frame time every 30 frames (8 - 96, aiming at ~50 fps) and otherwise
+      // kept steady, since a change shows as a small step in brightness.
+      speckView.turn(this.view, (Math.min(dt, 100) / 1000) * (Math.PI / 9));
+      speckView.resolve(this.view);
+      this.spinFrames++;
+      this.spinTime += dt;
+      if (this.spinFrames === 30) {
+        const mean = this.spinTime / 30;
+        if (mean > 24) this.spinSamples = Math.max(8, Math.round(this.spinSamples * 0.7));
+        else if (mean < 17.5) this.spinSamples = Math.min(96, this.spinSamples + 8);
+        this.spinFrames = 0;
+        this.spinTime = 0;
+      }
+      this.renderer.renderMoving(this.view, this.spinSamples);
+      this.needReset = true; // progressive refinement resumes when the spin stops
+    } else {
+      if (this.needReset) {
+        this.renderer.reset();
+        this.needReset = false;
+      }
+      this.renderer.render(this.view);
     }
-    this.renderer.render(this.view);
     if (this.snapshotRequested) {
       this.snapshotRequested = false;
       const link = document.createElement('a');

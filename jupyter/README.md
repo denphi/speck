@@ -94,9 +94,15 @@ Speck(data=open("molecule.xyz").read())    # any XYZ / extended XYZ / PDB text
 ```
 
 Every setting below is a constructor argument and can also be changed live
-(`w.surface = True`). The toolbar in the top right switches styles, toggles
-cartoon, surface and ligands, sets standard views, cycles color schemes and
-saves a PNG. Set the size with `w.layout.height = "500px"`.
+(`w.surface = True`). The toolbar in the top right switches styles and looks,
+toggles cartoon, surface and ligands, sets standard views, auto-rotates,
+focuses by tapping, opens a color menu (cartoon, surface and atom color
+schemes) and saves a PNG. Set the size with `w.layout.height = "500px"`.
+
+The viewer works with touch (one finger rotates, two fingers pinch to zoom and
+pan) and keyboard (Tab to the toolbar or the molecule; arrows rotate,
+Shift+arrows pan, + / - zoom, 0 recenters, F focuses at the center); toolbar
+buttons are labelled for screen readers.
 
 ### Cartoons, surfaces and ligands
 
@@ -118,7 +124,20 @@ w.rim = 0.3                       # rim light along silhouettes
 w.specular, w.gloss = 0.5, 0.7    # highlights
 w.metallic, w.metallicAtoms = 1.0, "metals"   # shiny metals, matte organics
 w.outline, w.outlineColor = 0.5, "#2d2466"
+w.autoRotate = True               # turntable spin (also a toolbar toggle)
 ```
+
+The looks are also in the toolbar's sparkle menu.
+
+### Element colors
+
+```python
+w.colorScheme = "jmol"                                  # speck, jmol, rasmol, newcpk
+w.atomColors = {"Au": "#ffcc33", "S": [0.9, 0.8, 0.2]}  # per element, on top of the palette
+```
+
+Both are regular settings: they can be passed to the constructor, work before the viewer is
+displayed, and the toolbar's color menu updates `colorScheme`.
 
 ### Macro look (depth of field)
 
@@ -130,6 +149,11 @@ w = Speck.from_pdb_id("4HHB", cartoon=True, highlight={"resName": "HEM", "chain"
 w.dofFocus = {"resName": "HEM", "chain": "A"}   # stays in focus as you rotate
 w.dofStrength = 1.2                              # 1 - 2 for a macro look (max 3)
 ```
+
+Or **tap to focus**: turn on the focus button in the toolbar (or hold Alt / Option) and click the
+point that should be sharp. The depth under the cursor becomes `dofPosition` (depth of field
+switches on if it was off), and the value is synced back to Python.
+The aperture button next to it switches depth of field off and on (`dofStrength`).
 
 ### Highlighting
 

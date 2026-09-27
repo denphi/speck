@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.8.2] - 2026-09-27
+
+### Added
+- Tap to focus: a focus button in the toolbar (or Alt / Option-click) sets the depth-of-field focal plane to
+  the exact depth under the cursor, turning depth of field on if needed; synced as `dofPosition`
+- Color menu: the palette button opens a menu of cartoon, surface and atom color schemes (with the current
+  one checked) instead of cycling element palettes
+- Looks menu: a toolbar button lists the looks of `apply_preset()` (default, matte, glossy, toon, cover,
+  metal, glass) with the current one checked; it replaces the toon button. Style buttons (ball and stick,
+  space filling, licorice) now change only geometry, so they combine with any look
+- Auto-rotate: `autoRotate` setting and toolbar toggle (turntable spin, 20° per second). Spinning frames keep
+  ambient occlusion and shadows: 8 - 96 AO samples per frame (chosen to hold ~50 fps), taken along directions
+  fixed to the molecule so the shading does not flicker as it turns; full refinement resumes when it stops
+- Depth-of-field toggle: an aperture button in the toolbar turns the macro blur off, and back on at the last
+  strength (tap to focus also turns it back on)
+- `colorScheme` and `atomColors` settings: the element palette and per-element colors (`'#rrggbb'` or
+  `[r, g, b]`), kept across redraws and usable before the viewer is displayed; the color menu updates
+  `colorScheme`
+- Touch: one finger rotates, two fingers pinch to zoom and pan (Pointer Events; the page no longer scrolls
+  under the viewer); larger toolbar buttons on touch screens
+- Keyboard and screen readers: toolbar and menus are real buttons with labels and pressed / checked states;
+  Tab reaches the molecule, where arrows rotate, Shift+arrows pan, + / - zoom, 0 recenters and F focuses
+
+### Changed
+- License metadata is BSD-3-Clause (Speck's original public-domain notice ships as `LICENSE-SPECK`)
+
 ## [0.8.1] - 2026-09-27
 
 ### Added

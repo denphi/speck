@@ -5,20 +5,8 @@
   var S = window.Speck;
   var GALLERY = "https://raw.githubusercontent.com/denphi/speck/master/media/gallery/";
 
-  // Same looks as ipyspeck's apply_preset(); each starts from "default".
-  var PRESETS = {
-    "default": {ao: 0.75, brightness: 0.5, atomShade: 0.5, bondShade: 0.5, cartoonShade: 0.2,
-                surfaceShade: 0.1, outline: 0.0, outlineWidth: 1.0, outlineColor: "#000000",
-                specular: 0.0, gloss: 0.5, metallic: 0.0, metallicAtoms: "all", shadows: 0.0,
-                rim: 0.0, fog: 0.0, saturation: 1.0, tonemap: false, dofStrength: 0.0},
-    matte: {ao: 0.9, brightness: 0.55},
-    glossy: {specular: 0.6, gloss: 0.65, rim: 0.2, tonemap: true},
-    toon: {ao: 0.3, outline: 1.0, outlineWidth: 1.5, atomShade: 0.3, cartoonShade: 0.1},
-    cover: {ao: 1.0, brightness: 0.55, specular: 0.5, gloss: 0.6, shadows: 0.6, rim: 0.35, fog: 0.35,
-            saturation: 1.15, tonemap: true, outline: 0.2, atomShade: 0.25, cartoonShade: 0.05},
-    metal: {metallic: 1.0, metallicAtoms: "metals", gloss: 0.75, specular: 0.6, atomShade: 0.1, tonemap: true},
-    glass: {surface: true, surfaceOpacity: 0.35, surfaceColor: "#eef2f8", specular: 0.4, gloss: 0.7, cartoon: true}
-  };
+  // Looks shared with the viewer's toolbar and apply_preset() in Python
+  var PRESETS = S.LOOKS;
 
   var SAMPLES = [
     {label: "AlphaFold RPP7", query: "Q8W3K0", preset: "cover", settings: {cartoon: true, cartoonColor: "plddt"}},
@@ -38,13 +26,6 @@
 
   var RCSB = "https://files.rcsb.org/download/";
   var SCENES = {};
-
-  // Default element colors, to undo a scene's custom colors.
-  var DEFAULT_COLORS = {};
-  Object.keys(S.elements).forEach(function (k) {
-    if (isNaN(k)) DEFAULT_COLORS[k] = S.elements[k].color.slice();
-  });
-  var customColors = false;
 
   // --- viewer state (the "host" of SpeckViewer) ------------------------------
   function freshState() {
@@ -68,6 +49,7 @@
       if (k in S.VIEW_DEFAULTS) viewer.setTrait(k, changes[k]);
     }
     syncControls();
+    markPreset(viewer.currentLook() || null);   // also when picked in the toolbar
   }
 
   function syncControls() {
@@ -138,10 +120,6 @@
   }
 
   function resetScene() {
-    if (customColors) {
-      viewer.setAtomsColor(DEFAULT_COLORS);
-      customColors = false;
-    }
     stage.style.background = "";
   }
 
@@ -265,16 +243,13 @@
       resetScene();
       var next = freshState();
       Object.assign(next, sc.settings);
+      if (Object.keys(sc.colors).length) next.atomColors = sc.colors;
       next.data = text;
       next.camera = fitCamera(sc.camera, sc.size);
       state = next;
       for (var k in S.VIEW_DEFAULTS) viewer.setTrait(k, state[k]);
       viewer.updateToolbar();
       viewer.loadStructure();
-      if (Object.keys(sc.colors).length) {
-        viewer.setAtomsColor(sc.colors);
-        customColors = true;
-      }
       var bg = sc.background;
       stage.style.background = "radial-gradient(ellipse at 50% 42%, rgb(" + bg[0].join(",") + ") 0%, rgb(" +
                                bg[1].join(",") + ") 100%)";

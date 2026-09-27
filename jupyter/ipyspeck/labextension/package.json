@@ -1,6 +1,6 @@
 {
   "name": "ipyspeck",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "description": "Speck Jupyter Widget",
   "keywords": [
     "jupyter",
@@ -102,7 +102,7 @@
       }
     },
     "_build": {
-      "load": "static/remoteEntry.6ef1c280ae2b074c8b74.js",
+      "load": "static/remoteEntry.3e5e87a1f537e4d6fa5f.js",
       "extension": "./extension"
     }
   }

@@ -3,8 +3,10 @@ const path = require('path');
 
 // Builds the GitHub Pages site into ../docs: the shared Speck viewer as a
 // content-hashed bundle (window.Speck), plus the pages in public/, whose
-// "speck.js" references are rewritten to the hashed file name.
+// "speck.js" references are rewritten to the hashed file name and
+// {{version}} to the ipyspeck version (jupyter/package.json).
 const outDir = path.resolve(__dirname, '..', 'docs');
+const version = require('../jupyter/package.json').version;
 
 class WritePages {
   apply(compiler) {
@@ -18,7 +20,9 @@ class WritePages {
             fs.mkdirSync(dst, { recursive: true });
             copy(src, dst);
           } else if (entry.name.endsWith('.html')) {
-            fs.writeFileSync(dst, fs.readFileSync(src, 'utf8').replace(/src="speck\.js"/g, `src="${bundle}"`));
+            fs.writeFileSync(dst, fs.readFileSync(src, 'utf8')
+              .replace(/src="speck\.js"/g, `src="${bundle}"`)
+              .replace(/\{\{version\}\}/g, version));
           } else {
             fs.copyFileSync(src, dst);
           }

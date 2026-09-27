@@ -17,7 +17,7 @@ import streamlit.components.v1 as components
 from ._io import (count_frames, fetch_alphafold, fetch_pdb, from_ase, from_pymatgen,
                   from_rdkit, read_file)
 
-__version__ = "0.8.1"
+__version__ = "0.8.2"
 
 __all__ = ["speck", "SETTINGS", "PRESETS", "count_frames", "fetch_alphafold", "fetch_pdb",
            "from_ase", "from_pymatgen", "from_rdkit", "read_file"]
@@ -27,6 +27,8 @@ SETTINGS = {
     # atoms and bonds
     "bonds": True, "atomScale": 0.24, "relativeAtomScale": 0.64, "bondScale": 0.5,
     "bondThreshold": 1.2, "bondShade": 0.5, "atomShade": 0.5, "ligands": True,
+    # colors
+    "colorScheme": "speck", "atomColors": {},
     # highlighting
     "highlight": {}, "highlightColor": "", "highlightScale": 1.0, "ghost": 0.0,
     # lighting and effects
@@ -46,7 +48,7 @@ SETTINGS = {
     # unit cell and trajectory
     "unitCell": False, "cellColor": "#666666", "cellRadius": 0.12, "frame": 0,
     # interface
-    "toolbar": True,
+    "autoRotate": False, "toolbar": True,
 }
 
 # Named looks, as in ipyspeck.Speck.apply_preset. Each starts from 'default'.

@@ -1,6 +1,6 @@
 {
   "name": "speck-site",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "private": true,
   "description": "GitHub Pages demo for ipyspeck / stspeck; builds the shared viewer from ../core into ../docs",
   "scripts": {

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Ccircle cx=%2711%27 cy=%2712%27 r=%277%27 fill=%27%232f6fe0%27/%3E%3Ccircle cx=%2722%27 cy=%2721%27 r=%275%27 fill=%27%23e2403a%27/%3E%3Ccircle cx=%2722%27 cy=%278%27 r=%273%27 fill=%27%231c2130%27/%3E%3C/svg%3E">
-<title>ipyspeck · molecular graphics for Jupyter and Streamlit</title>
+<title>ipyspeck {{version}} · molecular graphics for Jupyter and Streamlit</title>
 <meta name="description" content="Publication-quality molecular rendering in the browser: cartoons, surfaces, glass, metals, shadows and macro depth of field. ipyspeck for Jupyter, stspeck for Streamlit.">
 <style>
   :root {
@@ -20,6 +20,8 @@
     padding: 18px 28px; background: var(--panel); border-bottom: 1px solid var(--line); }
   header h1 { margin: 0; font-size: 22px; letter-spacing: -0.01em; }
   header h1 span { color: var(--muted); font-weight: 400; font-size: 15px; margin-left: 8px; }
+  header h1 .version { font-size: 12px; font-weight: 600; vertical-align: 3px; margin-left: 4px; padding: 2px 7px;
+    border-radius: 999px; background: rgba(47, 111, 224, 0.1); color: #2f6fe0; text-decoration: none; }
   header nav { display: flex; gap: 18px; font-size: 14px; }
   .app { display: grid; grid-template-columns: minmax(0, 1fr) 320px; height: calc(100vh - 67px); min-height: 560px; }
   .stage { position: relative; min-width: 0; transition: background 0.3s; }
@@ -75,7 +77,7 @@
 </head>
 <body>
 <header>
-  <h1>ipyspeck <span>molecular graphics for Jupyter and Streamlit</span></h1>
+  <h1>ipyspeck <a class="version" href="https://pypi.org/project/ipyspeck/{{version}}/" title="Release on PyPI">{{version}}</a> <span>molecular graphics for Jupyter and Streamlit</span></h1>
   <nav>
     <a href="#install">Install</a>
     <a href="#gallery">Gallery</a>

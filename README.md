@@ -130,6 +130,8 @@ Releases: bump the version in `jupyter/pyproject.toml`, `jupyter/package.json`,
 `jupyter/ipyspeck/_version.py` (and the `^x.y.z` module version in `speck.py`),
 `streamlit/pyproject.toml`, `streamlit/stspeck/__init__.py`; run `npm run build:prod` in
 `jupyter/`; build with `uv build` (or `python -m build`) in each package; upload with `twine`.
+Rebuild the demo site (`cd site && npm run build`) so its title and header show the new version, which
+comes from `jupyter/package.json`.
 
 ## Credits and license
 

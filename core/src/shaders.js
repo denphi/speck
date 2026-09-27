@@ -331,6 +331,12 @@ void main() {
 #extension GL_EXT_frag_depth: enable
 precision highp float;
 
+// Depth in [0, 1) packed into RGBA8 (for picking the focus point).
+vec4 packDepth(float d) {
+    vec4 enc = fract(vec4(1.0, 255.0, 65025.0, 16581375.0) * clamp(d, 0.0, 0.99999));
+    return enc - enc.yzww * vec4(1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0, 0.0);
+}
+
 uniform vec2 uBottomLeft;
 uniform vec2 uTopRight;
 uniform float uRes;
@@ -370,6 +376,8 @@ void main() {
     } else if (uMode == 1) {
         // Alpha carries the material: 1.0 for metals, 0.5 otherwise.
         gl_FragColor = vec4(normal * 0.5 + 0.5, mix(0.5, 1.0, vMetal));
+    } else {
+        gl_FragColor = packDepth(-coord.z/uDepth);
     }
     gl_FragDepthEXT = -coord.z/uDepth;
 }
@@ -493,6 +501,12 @@ void main() {
 #extension GL_EXT_frag_depth: enable
 precision highp float;
 
+// Depth in [0, 1) packed into RGBA8 (for picking the focus point).
+vec4 packDepth(float d) {
+    vec4 enc = fract(vec4(1.0, 255.0, 65025.0, 16581375.0) * clamp(d, 0.0, 0.99999));
+    return enc - enc.yzww * vec4(1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0, 0.0);
+}
+
 uniform mat4 uRotation;
 uniform vec2 uBottomLeft;
 uniform vec2 uTopRight;
@@ -576,6 +590,8 @@ void main() {
         gl_FragColor = vec4(color, 1);
     } else if (uMode == 1) {
         gl_FragColor = vec4(normal * 0.5 + 0.5, mix(0.5, 1.0, metal));
+    } else {
+        gl_FragColor = packDepth(-(coord.z - uDepth/2.0)/uDepth);
     }
     gl_FragDepthEXT = -(coord.z - uDepth/2.0)/uDepth;
 }
@@ -608,6 +624,12 @@ void main() {
 #version 100
 precision highp float;
 
+// Depth in [0, 1) packed into RGBA8 (for picking the focus point).
+vec4 packDepth(float d) {
+    vec4 enc = fract(vec4(1.0, 255.0, 65025.0, 16581375.0) * clamp(d, 0.0, 0.99999));
+    return enc - enc.yzww * vec4(1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0, 0.0);
+}
+
 uniform int uMode;
 
 varying vec3 vNormal;
@@ -616,9 +638,11 @@ varying vec3 vColor;
 void main() {
     if (uMode == 0) {
         gl_FragColor = vec4(vColor, 1);
-    } else {
+    } else if (uMode == 1) {
         vec3 normal = normalize(vNormal);
         gl_FragColor = vec4(normal * 0.5 + 0.5, 0.5);
+    } else {
+        gl_FragColor = packDepth(gl_FragCoord.z);
     }
 }
 `;

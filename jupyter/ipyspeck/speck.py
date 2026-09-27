@@ -11,6 +11,7 @@ from traitlets import Unicode, Bool, Float, Int, Enum, Dict, observe, validate, 
 
 _MESH_SCHEMES = ('ss', 'chain', 'rainbow', 'plddt')
 _HEX = re.compile(r'^#[0-9a-fA-F]{6}$')
+_COLOR_SCHEMES = ('speck', 'jmol', 'rasmol', 'newcpk')
 _SELECTION_KEYS = ('index', 'chain', 'resName', 'resSeq', 'name', 'element', 'ligands')
 
 # Named looks for apply_preset(). Every preset starts from 'default', so
@@ -114,6 +115,15 @@ class Speck(widgets.DOMWidget):
         Blend of atom colors toward white, default(0.5)
     ligands : bool
         Show ligands (non-polymer, non-water PDB residues), default(True)
+
+    Colors
+
+    colorScheme : str
+        Element palette: 'speck', 'jmol', 'rasmol' or 'newcpk'; the toolbar's
+        color menu sets it, default('speck')
+    atomColors : dict
+        Per-element colors on top of the palette, as '#rrggbb' or [r, g, b]
+        in 0 - 1, e.g. {"Au": "#ffcc33", "S": [0.9, 0.8, 0.2]}, default({})
 
     Highlighting
 
@@ -251,6 +261,9 @@ class Speck(widgets.DOMWidget):
         Trajectory frame shown, default(0)
     nframes : int
         Number of frames in data (read only)
+    autoRotate : bool
+        Spin the molecule about the vertical axis (toolbar toggle),
+        default(False)
 
     Methods
     -------
@@ -270,17 +283,17 @@ class Speck(widgets.DOMWidget):
     snapshot()
         Download the on-screen image as PNG in the browser
     setAtomColor(atom, color), setAtomsColor(atoms)
-        Set element colors
+        Add element colors to atomColors
     setColorSchema(schema), switchColorSchema()
-        Change the element color palette
+        Change colorScheme (and clear atomColors)
     """
 
     _view_name = Unicode('SpeckView').tag(sync=True)
     _model_name = Unicode('SpeckModel').tag(sync=True)
     _view_module = Unicode('ipyspeck').tag(sync=True)
     _model_module = Unicode('ipyspeck').tag(sync=True)
-    _view_module_version = Unicode('^0.8.1').tag(sync=True)
-    _model_module_version = Unicode('^0.8.1').tag(sync=True)
+    _view_module_version = Unicode('^0.8.2').tag(sync=True)
+    _model_module_version = Unicode('^0.8.2').tag(sync=True)
 
     data = Unicode('').tag(sync=True)
     toolbar = Bool(True).tag(sync=True)
@@ -295,6 +308,10 @@ class Speck(widgets.DOMWidget):
     bondShade = Float(0.5).tag(sync=True)
     atomShade = Float(0.5).tag(sync=True)
     ligands = Bool(True).tag(sync=True)
+
+    # colors
+    colorScheme = Enum(_COLOR_SCHEMES, default_value='speck').tag(sync=True)
+    atomColors = Dict().tag(sync=True)
 
     # highlighting
     highlight = Dict().tag(sync=True)
@@ -358,6 +375,9 @@ class Speck(widgets.DOMWidget):
     frame = Int(0, min=0).tag(sync=True)
     nframes = Int(1, read_only=True).tag(sync=True)
 
+    # interaction
+    autoRotate = Bool(False).tag(sync=True)
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._requests = {}
@@ -385,6 +405,27 @@ class Speck(widgets.DOMWidget):
         if _HEX.match(value) or (value == '' and proposal['trait'].name == 'highlightColor'):
             return value
         raise TraitError("%s must be a '#rrggbb' color" % proposal['trait'].name)
+
+    @validate('atomColors')
+    def _valid_atom_colors(self, proposal):
+        colors = {}
+        for atom, color in proposal['value'].items():
+            if not isinstance(atom, str):
+                raise TraitError("atomColors keys must be element symbols, got %r" % (atom,))
+            if isinstance(color, str):
+                if not _HEX.match(color):
+                    raise TraitError("atomColors[%r] must be '#rrggbb' or [r, g, b], got %r" % (atom, color))
+                colors[atom] = color
+            else:
+                try:
+                    rgb = [float(c) for c in color]
+                except (TypeError, ValueError):
+                    rgb = []
+                if len(rgb) != 3 or not all(0 <= c <= 1 for c in rgb):
+                    raise TraitError("atomColors[%r] must be '#rrggbb' or [r, g, b] in 0 - 1, got %r"
+                                     % (atom, color))
+                colors[atom] = rgb
+        return colors
 
     @validate('highlight', 'dofFocus')
     def _valid_selection(self, proposal):
@@ -599,52 +640,28 @@ class Speck(widgets.DOMWidget):
         self.send({"do": "snapshot"})
 
     def setAtomColor(self, atom, color):
-        """Set the color of atom types
-
-        Parameters
-        ----------
-        atom : str
-            Atom Name
-        color : list
-            A list with 3 rgb normalized values [0 - 1]
-        """
+        """Set the color of one element ('#rrggbb' or [r, g, b] in 0 - 1)."""
         self.setAtomsColor({atom: color})
 
     def setAtomsColor(self, atoms):
-        """Set the color of multiple atom types
+        """Add element colors to atomColors, e.g. {"Au": [1, 0.8, 0.2]}.
 
-        Parameters
-        ----------
-        atoms : dict
-            A dictionary with tuples key as str and value rgb normalized values
-            [0 - 1]
+        Colors are '#rrggbb' or [r, g, b] in 0 - 1. Unlike before 0.8.2 they
+        are kept in the atomColors trait, so they also work before the
+        viewer is displayed.
         """
-        for atom, rgb in atoms.items():
-            if not isinstance(atom, str):
-                raise Exception(
-                    "atom names should be str, '%s' passed" % type(atom).__name__
-                )
-            if len(rgb) != 3:
-                raise Exception("RGB values should contain exactly 3 elements")
-            for i in range(3):
-                if rgb[i] < 0 or rgb[i] > 1:
-                    raise Exception("RGB values should be [0 - 1] range")
-        self.send({"do": "changeAtomsColor", "atoms": atoms})
+        self.atomColors = {**self.atomColors, **atoms}
 
     def setColorSchema(self, schema):
-        """Set the color schema used by Speck, overwrites any custom change in
-           atom color
-
-        Parameters
-        ----------
-        schema : str
-            name of the schema/palette to use
-        """
-        self.send({"do": "changeColorSchema", "schema": schema})
+        """Switch the element palette (colorScheme) and clear atomColors."""
+        with self.hold_trait_notifications():
+            self.colorScheme = schema
+            self.atomColors = {}
 
     def switchColorSchema(self):
-        """Switch to the next available color schema """
-        self.send({"do": "switchColorSchema"})
+        """Switch to the next element palette."""
+        i = _COLOR_SCHEMES.index(self.colorScheme)
+        self.setColorSchema(_COLOR_SCHEMES[(i + 1) % len(_COLOR_SCHEMES)])
 
 
 def _write_animation(filename, frames, fps):
