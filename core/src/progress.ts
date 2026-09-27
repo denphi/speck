@@ -23,6 +23,7 @@ export class LoadPanel {
   private card: HTMLDivElement;
   private list: HTMLDivElement;
   private pill: HTMLDivElement;
+  private actionButton: HTMLButtonElement | null = null;
   private steps: Step[] = [];
   private active = false;
   private showTimer: any = null;
@@ -99,9 +100,26 @@ export class LoadPanel {
     this.show();
   }
 
+  // A button under the steps (e.g. Cancel for a video export), until finish().
+  action(label: string, run: () => void) {
+    this.begin();
+    if (!this.actionButton) {
+      this.actionButton = document.createElement('button');
+      this.actionButton.type = 'button';
+      this.actionButton.className = 'ipyspeck-progress-action';
+      this.card.appendChild(this.actionButton);
+    }
+    this.actionButton.textContent = label;
+    this.actionButton.onclick = run;
+  }
+
   // The structure is on screen: hide the panel and follow the shading.
   finish(followShading: boolean) {
     clearTimeout(this.showTimer);
+    if (this.actionButton) {
+      this.actionButton.remove();
+      this.actionButton = null;
+    }
     const wasShown = this.card.style.display !== 'none';
     this.card.style.display = 'none';
     this.active = false;

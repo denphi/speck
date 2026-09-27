@@ -33,5 +33,6 @@ export declare class SpeckView extends DOMWidgetView {
     private reloadData;
     render(): void;
     remove(): any;
+    private saveVideo;
     handleCustomMessage(message: any): void;
 }

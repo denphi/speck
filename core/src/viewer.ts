@@ -12,6 +12,13 @@ const speckColors = require('./colors.js');
 const speckParse = require('./parse-async.js');
 const speckFormats = require('./formats.js');
 import { LoadPanel } from './progress';
+import { FilmStudio, FilmOptions, FilmResult } from './cinema';
+export { VIDEO_SIZES, FilmOptions, FilmResult } from './cinema';
+const speckVideo = require('./video.js');
+// Whether this browser can encode MP4 video (WebCodecs).
+export function videoSupported(): boolean {
+  return speckVideo.supported();
+}
 const speckCartoon = require('./cartoon.js');
 const speckSelect = require('./select.js');
 const speckElements = require('./elements.js');
@@ -336,6 +343,7 @@ export class SpeckViewer {
   private snapshotRequested = false;
   private cameraTimer: any = null;
   private exportQueue: Promise<void> = Promise.resolve();
+  private studioInstance: FilmStudio | null = null;
   private reflowHandler = () => this.reflow();
 
   constructor(el: HTMLElement, host: ViewerHost) {
@@ -549,6 +557,7 @@ export class SpeckViewer {
 
   // Applies a changed setting (the host has already stored the new value).
   setTrait(trait: string, value: any) {
+    if (this.studioInstance) this.studioInstance.noteSetting(trait, value);
     const wasSpinning = trait === 'autoRotate' && !!this.view.autoRotate;
     const floorAppears = trait === 'floor' && !(this.view.floor > 0) && value > 0;
     this.view[trait] = value;
@@ -606,6 +615,7 @@ export class SpeckViewer {
     if (!this.renderer) {
       return Promise.resolve();
     }
+    this.stopFilm();
     const text = this.host.get('data') || '';
     const ticket = ++this.loadTicket;
     // The new structure is built with the current settings.
@@ -1168,6 +1178,26 @@ export class SpeckViewer {
     return this.system !== null && this.renderer !== null;
   }
 
+  // Ligand residues of the structure, largest first, as selections
+  // ({chain, resName, resSeq}) with their atom counts.
+  ligands(): { selection: any; atoms: number }[] {
+    if (!this.system) return [];
+    const groups = new Map<string, { selection: any; atoms: number }>();
+    for (const i of speckSelect.indices(this.system, { ligands: true })) {
+      const a = this.system.atoms[i];
+      const key = a.chain + '|' + a.resName + '|' + a.resSeq;
+      const g = groups.get(key);
+      if (g) g.atoms++;
+      else groups.set(key, { selection: { chain: a.chain, resName: a.resName, resSeq: a.resSeq }, atoms: 1 });
+    }
+    return Array.from(groups.values()).sort((x, y) => y.atoms - x.atoms);
+  }
+
+  // A structure is on screen and no other one is loading.
+  get loaded(): boolean {
+    return this.ready && !this.loading;
+  }
+
   // Renders the current scene offscreen, waits until ambient occlusion has
   // converged and returns the PNG bytes. Options: width / height (px, the
   // other side keeps the on-screen aspect) or scale, supersample, aoRes,
@@ -1315,6 +1345,71 @@ export class SpeckViewer {
     return { png: await blob.arrayBuffer(), width: width, height: height };
   }
 
+  // --- films -----------------------------------------------------------------
+
+  private get studio(): FilmStudio {
+    if (!this.studioInstance) {
+      this.studioInstance = new FilmStudio({
+        el: this.el,
+        canvas: this.canvas,
+        panel: this.panel,
+        view: () => this.view,
+        renderer: () => this.renderer,
+        system: () => this.system,
+        defaults: VIEW_DEFAULTS,
+        rebuildTraits: REBUILD_TRAITS,
+        queueExport: (job) => this.queueExport(job),
+        flush: () => this.flushRebuild(),
+        setExporting: (on) => {
+          this.exporting = on;
+          this.needReset = true;
+        },
+        restoreLive: (rebuild) => {
+          this.renderer.setResolution(this.view.resolution, this.view.aoRes);
+          if (rebuild && this.system) {
+            speckSystem.setFrame(this.system, this.view.frame);
+            this.rebuild();
+          }
+          this.needReset = true;
+        },
+        redraw: () => {
+          this.needReset = true;
+        },
+      });
+    }
+    return this.studioInstance;
+  }
+
+  // Plays a film (a list of shots, see film.js) in the viewer, with a player bar.
+  playFilm(film: any, options: FilmOptions = {}) {
+    this.studio.play(film, options);
+  }
+
+  stopFilm() {
+    if (this.studioInstance) this.studioInstance.stop();
+  }
+
+  // Seconds a film lasts; throws if the film is not valid for this structure.
+  filmDuration(film: any): number {
+    return this.studio.duration(film);
+  }
+
+  // Renders a film: an MP4 encoded in the browser, or (format 'frames') each
+  // frame's canvas passed to onFrame.
+  renderFilm(film: any, options: FilmOptions & { format?: string } = {},
+             onFrame?: (index: number, count: number, frame: HTMLCanvasElement) => Promise<void> | void): Promise<FilmResult> {
+    return this.studio.render(film, options, onFrame);
+  }
+
+  // Renders a film and downloads it as an MP4 file.
+  downloadFilm(film: any, options: FilmOptions = {}): Promise<FilmResult> {
+    return this.studio.download(film, options);
+  }
+
+  cancelFilm() {
+    if (this.studioInstance) this.studioInstance.cancel();
+  }
+
   // --- rendering -------------------------------------------------------------
 
   private reflow() {
@@ -1365,13 +1460,17 @@ export class SpeckViewer {
     const now = performance.now();
     const dt = this.lastFrameTime ? now - this.lastFrameTime : 16;
     this.lastFrameTime = now;
-    if (this.view.autoRotate && this.system) {
+    const film = this.studioInstance && this.system ? this.studioInstance.frame(dt) : '';
+    if (film === 'changed') this.needReset = true;
+    if (film === 'moving' || (this.view.autoRotate && this.system && !this.studioInstance?.previewing)) {
       // 20 degrees per second, independent of the frame rate. Each frame is
       // fully shaded with AO samples; their number is re-chosen from the mean
       // frame time every 30 frames (8 - 96, aiming at ~50 fps) and otherwise
       // kept steady, since a change shows as a small step in brightness.
-      speckView.turn(this.view, (Math.min(dt, 100) / 1000) * (Math.PI / 9));
-      speckView.resolve(this.view);
+      if (film !== 'moving') {
+        speckView.turn(this.view, (Math.min(dt, 100) / 1000) * (Math.PI / 9));
+        speckView.resolve(this.view);
+      }
       this.spinFrames++;
       this.spinTime += dt;
       if (this.spinFrames === 30) {

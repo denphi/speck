@@ -336,3 +336,88 @@
     animation: none;
   }
 }
+
+.ipyspeck-progress-action {
+  display: block;
+  margin: 8px 0 0 auto;
+  padding: 3px 12px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 5px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.ipyspeck-progress-action:hover {
+  background: #f3f4f6;
+}
+
+/* Film preview: player bar and titles */
+.ipyspeck-player {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  font: 12px/1.3 system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color: #24292f;
+  z-index: 3;
+}
+
+.ipyspeck-player button {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ipyspeck-player button:hover,
+.ipyspeck-player button:focus-visible {
+  background: rgba(0, 0, 0, 0.07);
+}
+
+.ipyspeck-player svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+  stroke: currentColor;
+}
+
+.ipyspeck-player input[type='range'] {
+  flex: 1;
+  min-width: 40px;
+  accent-color: #1f6feb;
+}
+
+.ipyspeck-player-time {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  color: #57606a;
+}
+
+.ipyspeck-titles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.ipyspeck-titles canvas {
+  width: 100%;
+  height: 100%;
+}

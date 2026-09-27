@@ -168,17 +168,25 @@ var center = module.exports.center = function(s) {
 }
 
 // Moves the atoms to frame k (coordinates as in the file) and marks derived
-// geometry (bonds, cartoon, surface) as outdated.
+// geometry (bonds, cartoon, surface) as outdated. A fractional k (films)
+// blends the two frames around it.
 module.exports.setFrame = function(s, k) {
     if (!s.frames || s.frames.length === 0) return;
-    k = Math.max(0, Math.min(s.frames.length - 1, k | 0));
-    var f = s.frames[k];
+    k = Math.max(0, Math.min(s.frames.length - 1, +k || 0));
+    var k0 = Math.floor(k), u = k - k0;
+    var f = s.frames[k0], g = u > 1e-6 ? s.frames[Math.min(s.frames.length - 1, k0 + 1)] : null;
     var o = s.offset || {x: 0, y: 0, z: 0};
     for (var i = 0; i < s.atoms.length; i++) {
         var a = s.atoms[i];
-        a.x = f[3 * i] - o.x;
-        a.y = f[3 * i + 1] - o.y;
-        a.z = f[3 * i + 2] - o.z;
+        var x = f[3 * i], y = f[3 * i + 1], z = f[3 * i + 2];
+        if (g) {
+            x += (g[3 * i] - x) * u;
+            y += (g[3 * i + 1] - y) * u;
+            z += (g[3 * i + 2] - z) * u;
+        }
+        a.x = x - o.x;
+        a.y = y - o.y;
+        a.z = z - o.z;
     }
     s.frameIndex = k;
     s.version = (s.version || 0) + 1;

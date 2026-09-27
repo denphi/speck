@@ -16,10 +16,11 @@ import streamlit.components.v1 as components
 
 from ._io import (count_frames, fetch_alphafold, fetch_pdb, from_ase, from_mdanalysis, from_mdtraj,
                   from_pymatgen, from_rdkit, read_file)
+from . import shots
 
 __version__ = "0.8.3"
 
-__all__ = ["speck", "SETTINGS", "PRESETS", "count_frames", "fetch_alphafold", "fetch_pdb",
+__all__ = ["speck", "shots", "SETTINGS", "PRESETS", "count_frames", "fetch_alphafold", "fetch_pdb",
            "from_ase", "from_mdanalysis", "from_mdtraj", "from_pymatgen", "from_rdkit", "read_file"]
 
 # Settings with their defaults; identical to the ipyspeck traits.
@@ -90,7 +91,7 @@ else:
 def speck(data="", *, trajectory=None, height=400, preset=None, camera=None, return_state=False,
           export_width=None, export_height=None, export_scale=2, export_supersample=2,
           export_transparent=True, export_background="#ffffff", export_filename="speck.png",
-          key=None, **settings):
+          film=None, film_loop=True, video=None, key=None, **settings):
     """Show a molecule with the Speck renderer.
 
     Parameters
@@ -122,6 +123,16 @@ def speck(data="", *, trajectory=None, height=400, preset=None, camera=None, ret
         width and/or height in pixels (the other side keeps the on-screen
         aspect) or a scale of the on-screen size. The largest side is
         limited to 4096 px.
+    film : list, optional
+        A film (shots from stspeck.shots) played in the viewer with a
+        player bar: play / pause, scrubber, and a button that renders the
+        film as an MP4 in the browser and downloads it (Chrome, Edge,
+        Safari 16.4+, Firefox 130+). film_loop repeats it.
+    video : dict, optional
+        Options for that MP4: size ('720p', '1080p', '4k', 'square',
+        'vertical', ... or [width, height]), fps, samples, background (a
+        color or a list for a gradient), vignette, credit, motionBlur,
+        filename. See ipyspeck's Speck.save_video.
     key : str, optional
         Streamlit widget key.
     **settings
@@ -147,8 +158,11 @@ def speck(data="", *, trajectory=None, height=400, preset=None, camera=None, ret
     export = {"width": export_width, "height": export_height, "scale": export_scale,
               "supersample": export_supersample, "transparent": export_transparent,
               "background": export_background, "filename": export_filename}
+    film_args = None
+    if film is not None:
+        film_args = {"shots": shots.film(film), "loop": bool(film_loop), "video": dict(video or {})}
     return _component(
-        data=data, trajectory=bytes(trajectory) if trajectory else None,
+        film=film_args, data=data, trajectory=bytes(trajectory) if trajectory else None,
         height=int(height), camera=camera or {}, return_state=bool(return_state),
         export={k: v for k, v in export.items() if v is not None}, key=key, default=None,
         **values)

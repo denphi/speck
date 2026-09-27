@@ -9,7 +9,7 @@ import {
 
 import { MODULE_NAME, MODULE_VERSION } from './version';
 // The viewer and renderer are shared with stspeck (see ../../core).
-import { SpeckViewer, VIEW_DEFAULTS, VIEW_TRAITS } from '../../core/lib/viewer';
+import { SpeckViewer, VIEW_DEFAULTS, VIEW_TRAITS, videoSupported } from '../../core/lib/viewer';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const inflate = require('../../core/lib/inflate.js');
 import '../../core/css/speck.css';
@@ -159,6 +159,41 @@ export class SpeckView extends DOMWidgetView {
     return super.remove();
   }
 
+  // Renders a film for save_video(): an MP4 encoded here, sent back in
+  // chunks, or (other formats, or no WebCodecs) the PNG frames.
+  private saveVideo(message: any) {
+    const viewer = this.viewer;
+    const id = message.id;
+    const fail = (e: any) => {
+      const text = String((e && e.message) || e);
+      this.model.send({ event: 'video', id: id, error: text }, {});
+      if (text !== 'cancelled') viewer.progressFailed('Video export failed: ' + text);
+    };
+    const mp4 = message.format === 'mp4' && videoSupported();
+    const options = { ...message, format: mp4 ? 'mp4' : 'frames' };
+    viewer
+      .renderFilm(message.film, options, (index, count, canvas) =>
+        new Promise<void>((resolve) =>
+          canvas.toBlob((blob) => {
+            (blob as Blob).arrayBuffer().then((png) => {
+              this.model.send({ event: 'frame', id: id, index: index, count: count }, {}, [png]);
+              resolve();
+            });
+          }, 'image/png')
+        )
+      )
+      .then((result) => {
+        if (!result.mp4) return;
+        const bytes = result.mp4;
+        const CHUNK = 4 << 20;
+        const count = Math.max(1, Math.ceil(bytes.length / CHUNK));
+        for (let i = 0; i < count; i++) {
+          const part = bytes.slice(i * CHUNK, (i + 1) * CHUNK);
+          this.model.send({ event: 'video', id: id, index: i, count: count }, {}, [part.buffer]);
+        }
+      }, fail);
+  }
+
   handleCustomMessage(message: any) {
     const viewer = this.viewer;
     switch (message.do) {
@@ -187,6 +222,18 @@ export class SpeckView extends DOMWidgetView {
             ]),
           (e) => this.model.send({ event: 'image', id: message.id, error: String(e) }, {})
         );
+        return;
+      case 'playFilm':
+        try {
+          viewer.playFilm(message.film, message.options || {});
+        } catch (e) {
+          viewer.showNotice('Film preview: ' + ((e as Error).message || e));
+        }
+        return;
+      case 'stopFilm':
+        return viewer.stopFilm();
+      case 'saveVideo':
+        this.saveVideo(message);
         return;
       case 'saveAnimation':
         viewer

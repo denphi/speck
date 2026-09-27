@@ -97,7 +97,9 @@
 
   // --- frames (trajectories) ------------------------------------------------
   var frameRow = document.getElementById("frameRow");
+  var frameCount = 1;
   function setFrameCount(n) {
+    frameCount = n;
     frameRow.querySelector("input").max = Math.max(0, n - 1);
     frameRow.style.display = n > 1 ? "" : "none";
   }
@@ -482,6 +484,114 @@
       .then(function () { button.disabled = false; });
   });
 
+  // --- animate ----------------------------------------------------------------
+  // A few ready-made films (see core/src/film.js for the shots), previewed in
+  // the viewer or rendered to an MP4 in the browser.
+  var film = {
+    kind: document.getElementById("filmKind"), seconds: document.getElementById("filmSeconds"),
+    secondsV: document.getElementById("filmSecondsV"), title: document.getElementById("filmTitle"),
+    size: document.getElementById("filmSize"), fps: document.getElementById("filmFps"),
+    samples: document.getElementById("filmSamples"), note: document.getElementById("filmNote"),
+    preview: document.getElementById("filmPreview"), save: document.getElementById("filmSave")
+  };
+  var lastFilm = null;
+  film.seconds.addEventListener("input", function () { film.secondsV.textContent = film.seconds.value; });
+  if (!S.videoSupported()) {
+    film.save.disabled = true;
+    film.note.textContent = "Saving video needs Chrome, Edge, Safari 16.4+ or Firefox 130+; preview works here.";
+  }
+
+  function buildFilm() {
+    var t = parseFloat(film.seconds.value), kind = film.kind.value;
+    var ligand = viewer.ligands()[0];
+    var sel = ligand ? ligand.selection : null;
+    var needLigand = function () {
+      if (!sel) throw new Error("this structure has no ligand to fly to");
+    };
+    var shots;
+    if (kind === "turntable") shots = [{type: "turntable", seconds: t}];
+    else if (kind === "rock") shots = [{type: "rock", seconds: t, degrees: 25}];
+    else if (kind === "orbit") shots = [{type: "orbit", seconds: t, degrees: 360, tilt: 25}];
+    else if (kind === "tour") {
+      needLigand();
+      shots = [{type: "orbit", seconds: 0.3 * t, degrees: 60}, {type: "fly_to", selection: sel, seconds: 0.25 * t},
+               {type: "rock", seconds: 0.2 * t, degrees: 15}, {type: "home", seconds: 0.25 * t}];
+    } else if (kind === "focus") {
+      needLigand();
+      shots = [{type: "together", shots: [{type: "rock", seconds: t, degrees: 12},
+                                          {type: "rack_focus", to: sel, seconds: 0.5 * t}]}];
+    } else if (kind === "cut") {
+      shots = [{type: "together", shots: [{type: "orbit", seconds: t, degrees: 120, tilt: 15},
+                                          {type: "cut_open", seconds: 0.4 * t, to: 0.5}]}];
+    } else {
+      if (frameCount < 2) throw new Error("this structure has no trajectory (one frame)");
+      shots = [{type: "trajectory", seconds: t}];
+    }
+    var title = film.title.value.trim();
+    if (title) {
+      var first = shots[0];
+      var span = Math.min(3, first.seconds || t);
+      shots[0] = {type: "together", shots: [first, {type: "title", text: title, seconds: span}]};
+    }
+    return shots;
+  }
+
+  function filmOptions() {
+    var b = background;
+    return {
+      size: film.size.value, fps: parseInt(film.fps.value), samples: parseInt(film.samples.value),
+      background: b.center ? {center: rgbHex(b.center), edge: rgbHex(b.edge || b.center)} : "#ffffff",
+      vignette: b.center && b.vignette ? 0.22 : 0, filename: "ipyspeck.mp4"
+    };
+  }
+
+  function filmAction(run) {
+    try {
+      lastFilm = {shots: buildFilm(), options: filmOptions()};
+      return run(lastFilm);
+    } catch (e) {
+      film.note.textContent = e.message;
+    }
+  }
+  film.preview.addEventListener("click", function () {
+    filmAction(function (f) { viewer.playFilm(f.shots, f.options); });
+  });
+  film.save.addEventListener("click", function () {
+    filmAction(function (f) {
+      film.save.disabled = true;
+      var started = performance.now();
+      return viewer.downloadFilm(f.shots, f.options).then(function (r) {
+        film.note.textContent = "Saved " + r.frames + " frames at " + r.width + " × " + r.height + " (" +
+          (r.mp4.length / 1e6).toFixed(1) + " MB) in " + Math.round((performance.now() - started) / 1000) + " s.";
+      }, function (e) {
+        film.note.textContent = e.message === "cancelled" ? "Cancelled." : "Video export failed: " + e.message;
+      }).then(function () { film.save.disabled = false; });
+    });
+  });
+
+  // A film as ipyspeck.shots calls.
+  var SHOT_ARGS = {fly_to: "selection", rack_focus: "to", title: "text"};
+  function pyShot(shot) {
+    var args = [], rest = Object.assign({}, shot);
+    delete rest.type;
+    if (shot.type === "together") {
+      return "shots.together(" + shot.shots.map(pyShot).join(", ") + ")";
+    }
+    var first = SHOT_ARGS[shot.type];
+    if (first) {
+      args.push(pyValue(rest[first]));
+      delete rest[first];
+    }
+    if (rest.settings) {
+      Object.keys(rest.settings).forEach(function (k) { args.push(k + "=" + pyValue(rest.settings[k])); });
+      delete rest.settings;
+    }
+    Object.keys(rest).forEach(function (k) {
+      args.push((k === "from" ? "start" : k) + "=" + pyValue(k === "seconds" ? Math.round(rest[k] * 100) / 100 : rest[k]));
+    });
+    return "shots." + shot.type + "(" + args.join(", ") + ")";
+  }
+
   // --- copy as Python ---------------------------------------------------------
   // The current structure, settings (those that differ from the defaults) and
   // camera as ipyspeck code; stspeck.speck() takes the same keyword arguments.
@@ -528,6 +638,14 @@
       lines.push('w.save_image("figure.png", width=3000, transparent=False, background="' + rgbHex(background.center) + '")');
     }
     lines.push("w");
+    if (lastFilm) {
+      var o = lastFilm.options;
+      lines.push("", "# The film from Animate (w.preview(film) plays it in the widget):", "from ipyspeck import shots",
+                 "film = [" + lastFilm.shots.map(pyShot).join(",\n        ") + "]");
+      lines.push('w.save_video("film.mp4", film, size=' + pyValue(o.size) + ", fps=" + o.fps + ", samples=" + o.samples +
+                 (typeof o.background === "object" ? ", background=" + pyValue(o.background) : "") +
+                 (o.vignette ? ", vignette=" + o.vignette : "") + ")");
+    }
     return lines.join("\n");
   }
   document.getElementById("copyPython").addEventListener("click", function () {

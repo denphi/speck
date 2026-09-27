@@ -192,6 +192,43 @@ saved = w.camera                                       # ...later: w.camera = sa
 
 Exports render in the browser after the cell finishes; the file appears a moment later.
 
+### Films and videos
+
+A film is a list of shots, played one after another. Preview it in the widget
+(play, pause, scrub, download), then render it as a video:
+
+```python
+from ipyspeck import Speck, shots
+
+w = Speck.from_pdb_id("4HHB", cartoon=True)
+heme = {"resName": "HEM", "chain": "A"}
+film = [
+    shots.together(shots.orbit(6, degrees=180), shots.title("Hemoglobin", subtitle="PDB 4HHB")),
+    shots.cut_open(2, to=0.5),                 # slice in to show the inside
+    shots.fly_to(heme, 3),                     # dolly in and center the heme
+    shots.rack_focus(heme, 2),                 # depth of field pulls focus to it
+    shots.crossfade(surface=True, surfaceOpacity=0.35),
+    shots.home(3),                             # back to the opening view
+]
+w.preview(film)
+w.save_video("hemoglobin.mp4", film, size="1080p", fps=30,
+             background=["#1b2330", "#07090d"], vignette=0.3)
+```
+
+Shots: `turntable`, `rock`, `orbit`, `zoom`, `fly_to`, `home`, `rack_focus`, `cut_open`,
+`fade` (any setting: `shots.fade(2, fog=0.5, ghost=0.6)`), `crossfade`, `trajectory`
+(smooth MD playback, interpolating between frames), `title`, `hold` and `together` (shots at
+the same time). Each takes an `ease` (`linear`, `smooth`, `in`, `out`, `sine`). For custom
+moves, pose the widget and record keys: `k1 = w.keyframe()`, rotate, `k2 = w.keyframe(fog=0.4)`,
+then `shots.keyframes([k1, k2], seconds=4)`.
+
+Every frame is fully shaded, with ambient occlusion fixed to the molecule, so videos do not
+flicker. MP4s are encoded in the browser (H.264 with WebCodecs: Chrome, Edge, Safari 16.4+,
+Firefox 130+); `.gif`, `.webm`, `.mov` or a directory of PNGs are written in Python. Sizes:
+`720p`, `1080p`, `1440p`, `4k`, `square`, `vertical` (9:16), `portrait` (4:5) or `(width, height)`;
+`motion_blur=4` averages sub-frames, `credit="..."` adds a corner line. Progress and a Cancel
+button show in the widget.
+
 ### Structures from Python
 
 ```python

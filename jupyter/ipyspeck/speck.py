@@ -12,6 +12,7 @@ import ipywidgets as widgets
 from traitlets import Unicode, Bool, Bytes, Float, Int, Enum, Dict, observe, validate, TraitError
 
 from . import _formats
+from . import shots as _shots
 from ._version import __version__
 
 
@@ -723,6 +724,76 @@ class Speck(widgets.DOMWidget):
             supersample=supersample, transparent=transparent, background=background,
             aoRes=aoRes, samples=samples), fps=fps)
 
+    # --- films ----------------------------------------------------------------
+
+    def keyframe(self, time=None, **settings):
+        """The current camera as a key for shots.keyframes(), with optional
+        settings to reach at that key (e.g. keyframe(fog=0.4)) and its time in
+        seconds. Rotate the view in the widget between calls."""
+        if not self.camera:
+            raise RuntimeError('the camera is not known yet: display the widget first')
+        key = {'camera': dict(self.camera)}
+        if settings:
+            key['settings'] = settings
+        if time is not None:
+            key['time'] = time
+        return key
+
+    def preview(self, film, loop=True, background=None, credit=None):
+        """Play a film (a list of shots, see ipyspeck.shots) in the widget,
+        with a player bar to pause, scrub, download an MP4 or close. The view
+        returns to how it was when the player closes. `background` and
+        `credit` are used by the player's download button (see save_video)."""
+        options = {'loop': loop}
+        if background is not None:
+            options['background'] = background
+        if credit is not None:
+            options['credit'] = credit
+        self.send({'do': 'playFilm', 'film': _shots.film(film), 'options': options})
+
+    def stop_preview(self):
+        """Close the film player."""
+        self.send({'do': 'stopFilm'})
+
+    def save_video(self, filename, film, fps=30, size='1080p', samples=256, aoRes=1024, supersample=1,
+                   background='#ffffff', vignette=0.0, motion_blur=0, credit=None, bitrate=None,
+                   callback=None):
+        """Render a film (a list of shots, see ipyspeck.shots) in the browser
+        and save it.
+
+        Every frame is fully shaded (`samples` ambient-occlusion samples,
+        fixed to the molecule so nothing flickers). .mp4 files are encoded
+        in the browser (H.264, WebCodecs); where it cannot, and for .gif,
+        .webm, .mov or a directory (numbered PNGs), the frames come back
+        to Python (needs Pillow; video formats also imageio with ffmpeg).
+
+        size: '480p', '720p', '1080p', '1440p', '4k', 'square' (1080 x 1080),
+        'vertical' (1080 x 1920), 'portrait' (1080 x 1350) or (width, height);
+        the longest side is at most 4096. When the aspect ratio differs from
+        the widget's, the structure is fitted to the picture first.
+        background: a color, a list of colors for a vertical gradient, or
+        {'center': color, 'edge': color} for a radial one.
+        vignette: darkened corners, 0 - 1. motion_blur: sub-frames averaged
+        per frame (e.g. 4; each one costs a render). credit: small text in
+        the corner. bitrate: bits per second (default about 0.2 per pixel).
+
+        Rendering runs in the browser after the current cell finishes and
+        shows its progress (with a Cancel button) in the widget, which must
+        be displayed; `callback(filename)` runs when the file is written.
+        """
+        film = _shots.film(film)
+        ext = os.path.splitext(filename)[1].lower()
+        if ext not in ('.mp4', '.gif', '.webm', '.mov', ''):
+            raise ValueError('unsupported video format %r (use .mp4, .gif, .webm, .mov or a directory)' % ext)
+        if isinstance(size, (list, tuple)):
+            size = [int(size[0]), int(size[1])]
+        options = dict(film=film, fps=fps, size=size, samples=samples, aoRes=aoRes,
+                       supersample=supersample, background=background, vignette=vignette,
+                       motionBlur=motion_blur, credit=credit, bitrate=bitrate,
+                       format='mp4' if ext == '.mp4' else 'frames')
+        done = (lambda _: callback(filename)) if callback else None
+        self._request('saveVideo', 'video', filename, done, options, fps=fps, chunks={})
+
     def _request(self, do, kind, filename, callback, options, **extra):
         rid = uuid.uuid4().hex
         self._requests[rid] = dict(kind=kind, filename=filename, callback=callback,
@@ -739,6 +810,17 @@ class Speck(widgets.DOMWidget):
         if content.get('error'):
             self._requests.pop(content['id'], None)
             self.log.warning('ipyspeck export failed: %s', content['error'])
+            return
+        if content.get('event') == 'video':
+            # The MP4 in chunks (comm messages have a size limit).
+            request['chunks'][content['index']] = bytes(buffers[0])
+            if len(request['chunks']) == content['count']:
+                self._requests.pop(content['id'], None)
+                data = b''.join(request['chunks'][i] for i in range(content['count']))
+                with open(request['filename'], 'wb') as f:
+                    f.write(data)
+                if request['callback']:
+                    request['callback'](data)
             return
         png = bytes(buffers[0])
         if content.get('event') == 'image':

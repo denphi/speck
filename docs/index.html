@@ -71,6 +71,7 @@
   button:hover { border-color: #c6ccd6; }
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   .load { display: flex; gap: 6px; }
+  #filmPreview, #filmSave { flex: 1; }
   .chips, .presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
   .chips button, .presets button { padding: 4px 9px; font-size: 12.5px; border-radius: 999px; }
   .chips button.active, .presets button.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
@@ -273,6 +274,23 @@
       <label class="row">Unit cell radius<input type="range" data-trait="cellRadius" min="0.02" max="0.4" step="0.01" data-digits="2"><span class="v"></span></label>
       </div>
     </details>
+    <details class="sec" data-sec="animate" open>
+      <summary>Animate<span class="sum-hint">video</span></summary>
+      <div class="sec-body">
+      <div class="field"><span>Shot</span><select id="filmKind">
+        <option value="turntable">Turntable</option><option value="rock">Rock back and forth</option>
+        <option value="orbit">Tilted orbit</option><option value="tour">Fly to the ligand and back</option>
+        <option value="focus">Rack focus on the ligand</option><option value="cut">Cut open</option>
+        <option value="trajectory">Play the trajectory</option></select></div>
+      <label class="row">Seconds<input type="range" id="filmSeconds" min="2" max="20" step="1" value="6"><span class="v" id="filmSecondsV">6</span></label>
+      <label class="field"><span>Title</span><input type="text" id="filmTitle" placeholder="Optional" spellcheck="false"></label>
+      <div class="field"><span>Size</span><select id="filmSize"><option value="720p">720p</option><option value="1080p" selected>1080p</option><option value="4k">4K</option><option value="square">Square 1:1</option><option value="vertical">Vertical 9:16</option></select></div>
+      <div class="field"><span>Frame rate</span><select id="filmFps"><option value="24">24 fps</option><option value="30" selected>30 fps</option><option value="60">60 fps</option></select></div>
+      <div class="field"><span>Quality</span><select id="filmSamples"><option value="64">Draft</option><option value="256" selected>Good</option><option value="512">Best</option></select></div>
+      <div class="load"><button id="filmPreview">Preview</button><button class="primary" id="filmSave">Save MP4</button></div>
+      <p class="note" id="filmNote">Every frame is fully shaded; the video is encoded in your browser.</p>
+      </div>
+    </details>
     <details class="sec" data-sec="export" open>
       <summary>Export</summary>
       <div class="sec-body">
@@ -323,7 +341,7 @@ stspeck.speck(**stspeck.fetch_pdb("4HHB"),
   based on <a href="https://github.com/wwwtyro/speck">Speck</a> by wwwtyro
 </footer>
 
-<script src="speck.3df0e53d9d.js"></script>
+<script src="speck.ad6966b1e3.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

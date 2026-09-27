@@ -93,6 +93,29 @@ function setTrajectory(value: any): boolean {
   return true;
 }
 
+// The film to preview (args.film), started once the structure is on screen.
+let filmTimer: any = null;
+function showFilm(film: any) {
+  clearInterval(filmTimer);
+  if (!viewer) return;
+  if (!film) {
+    viewer.stopFilm();
+    return;
+  }
+  const start = () => {
+    const v = viewer as SpeckViewer;
+    if (!v.loaded) return false;
+    clearInterval(filmTimer);
+    try {
+      v.playFilm(film.shots, { ...(film.video || {}), loop: film.loop });
+    } catch (e) {
+      v.showNotice('Film: ' + ((e as Error).message || e));
+    }
+    return true;
+  };
+  if (!start()) filmTimer = setInterval(start, 200);
+}
+
 function onRender(args: { [key: string]: any }) {
   const height = args.height || 400;
   root.style.height = height + 'px';
@@ -118,6 +141,7 @@ function onRender(args: { [key: string]: any }) {
     if (dataChanged) viewer.loadStructure();
     else if (newCamera) viewer.setCamera(state.camera);
   }
+  if (changed('film') || (dataChanged && args.film)) showFilm(args.film);
   lastArgs = args;
 }
 

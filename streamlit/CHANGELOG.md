@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- Films: camera moves and changes over time as a list of shots (`shots`: turntable, rock, orbit, zoom,
+  fly_to a selection, home, rack_focus, cut_open, fade any setting, crossfade, trajectory, title, keyframes,
+  together), with easing
+- Film preview in the viewer with a player bar (play / pause, scrubber, time, MP4 download, close); the
+  view returns to how it was when the player closes
+- Video export: every frame fully shaded with ambient occlusion fixed to the molecule (no flicker), MP4
+  (H.264) encoded in the browser with WebCodecs; named sizes (720p to 4K, square, vertical 9:16, portrait
+  4:5), solid / gradient / radial backgrounds, vignette, titles, credit line, optional motion blur;
+  progress with a Cancel button
+- Trajectories play smoothly in films: coordinates are interpolated between frames
+- `speck(..., film=[...], film_loop=True, video={...})`: the film plays in the component, and its download
+  button saves the MP4
+- Demo site: an Animate section with ready-made films, preview and MP4 export, included in Copy as Python
+
 ## [0.8.3] - 2026-09-27
 
 ### Added

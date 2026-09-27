@@ -506,6 +506,46 @@ module.exports = function (canvas, resolution, aoResolution) {
             display(view);
         }
 
+        // Video frames: like renderMoving, with the sample directions fixed to
+        // the molecule (so consecutive frames match), but refined over several
+        // calls after reset() until `total` samples. Returns true when done.
+        self.renderFixed = function(view, total) {
+            if (system === undefined || rAtoms == null) {
+                return true;
+            }
+            range = System.getRadius(system) * 2.0;
+            lastView = view;
+            if (!colorRendered) {
+                color(view);
+                normal(view);
+                if (view.shadows > 0) {
+                    shadowRendered = true;
+                    shadow(view);
+                }
+            }
+            var goal = view.ao > 0 ? Math.min(total, maxSamples(view)) : 0;
+            var n = samplesPerFrame(view.spf);
+            var toView = glm.mat4.invert(glm.mat4.create(), view.rotation);
+            for (var i = 0; i < n && sampleCount < goal; i++) {
+                sample(view, glm.mat4.multiply(glm.mat4.create(), aoRotation(sampleCount, true), toView));
+                sampleCount++;
+            }
+            display(view);
+            return sampleCount >= goal;
+        }
+
+        // Normalized depth of a selection seen with `view` (as the focus of
+        // depth of field).
+        self.selectionDepth = function(view, selection) {
+            if (system === undefined) return view.dofPosition;
+            range = System.getRadius(system) * 2.0;
+            var saved = view.dofFocus;
+            view.dofFocus = selection;
+            var d = focusDepth(view);
+            view.dofFocus = saved;
+            return d;
+        }
+
         // Draws atoms, bonds and meshes framed on rect into the bound
         // framebuffer (res x res pixels). mode 0: color, 1: normals, 2: packed
         // depth (picking). Returns the matrices for extra mesh passes.

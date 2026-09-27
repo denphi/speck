@@ -128,6 +128,38 @@ class SpeckView extends base_1.DOMWidgetView {
         this.viewer.destroy();
         return super.remove();
     }
+    // Renders a film for save_video(): an MP4 encoded here, sent back in
+    // chunks, or (other formats, or no WebCodecs) the PNG frames.
+    saveVideo(message) {
+        const viewer = this.viewer;
+        const id = message.id;
+        const fail = (e) => {
+            const text = String((e && e.message) || e);
+            this.model.send({ event: 'video', id: id, error: text }, {});
+            if (text !== 'cancelled')
+                viewer.progressFailed('Video export failed: ' + text);
+        };
+        const mp4 = message.format === 'mp4' && (0, viewer_1.videoSupported)();
+        const options = Object.assign(Object.assign({}, message), { format: mp4 ? 'mp4' : 'frames' });
+        viewer
+            .renderFilm(message.film, options, (index, count, canvas) => new Promise((resolve) => canvas.toBlob((blob) => {
+            blob.arrayBuffer().then((png) => {
+                this.model.send({ event: 'frame', id: id, index: index, count: count }, {}, [png]);
+                resolve();
+            });
+        }, 'image/png')))
+            .then((result) => {
+            if (!result.mp4)
+                return;
+            const bytes = result.mp4;
+            const CHUNK = 4 << 20;
+            const count = Math.max(1, Math.ceil(bytes.length / CHUNK));
+            for (let i = 0; i < count; i++) {
+                const part = bytes.slice(i * CHUNK, (i + 1) * CHUNK);
+                this.model.send({ event: 'video', id: id, index: i, count: count }, {}, [part.buffer]);
+            }
+        }, fail);
+    }
     handleCustomMessage(message) {
         const viewer = this.viewer;
         switch (message.do) {
@@ -152,6 +184,19 @@ class SpeckView extends base_1.DOMWidgetView {
                 viewer.renderImage(message).then((image) => this.model.send({ event: 'image', id: message.id, width: image.width, height: image.height }, {}, [
                     image.png,
                 ]), (e) => this.model.send({ event: 'image', id: message.id, error: String(e) }, {}));
+                return;
+            case 'playFilm':
+                try {
+                    viewer.playFilm(message.film, message.options || {});
+                }
+                catch (e) {
+                    viewer.showNotice('Film preview: ' + (e.message || e));
+                }
+                return;
+            case 'stopFilm':
+                return viewer.stopFilm();
+            case 'saveVideo':
+                this.saveVideo(message);
                 return;
             case 'saveAnimation':
                 viewer
