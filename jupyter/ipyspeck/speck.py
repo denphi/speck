@@ -690,8 +690,8 @@ class Speck(widgets.DOMWidget):
     # --- export -------------------------------------------------------------
 
     def save_image(self, filename=None, size=None, quality='good', transparent=True, background='#ffffff',
-                   width=None, height=None, scale=None, supersample=None, aoRes=None, samples=None,
-                   callback=None):
+                   title=None, subtitle=None, width=None, height=None, scale=None, supersample=None,
+                   aoRes=None, samples=None, callback=None):
         """Render a high-resolution PNG in the browser and save it.
 
         The image uses the current camera and settings:
@@ -708,7 +708,8 @@ class Speck(widgets.DOMWidget):
         `scale`). When the shape differs from the viewer's, what is on
         screen is kept (the whole structure is refitted if it was all
         visible). quality: 'draft' (fast), 'good' (default) or 'best';
-        samples, supersample and aoRes set its parts directly. The widget's
+        samples, supersample and aoRes set its parts directly. title /
+        subtitle: text in the lower left (none by default). The widget's
         camera button offers the same choices without code.
 
         Rendering runs in the browser after the current cell finishes (it
@@ -726,7 +727,8 @@ class Speck(widgets.DOMWidget):
             scale = 2
         self._request('saveImage', 'image', filename, callback, dict(
             size=size, quality=quality, width=width, height=height, scale=scale, supersample=supersample,
-            transparent=transparent, background=background, aoRes=aoRes, samples=samples))
+            transparent=transparent, background=background, aoRes=aoRes, samples=samples,
+            title=title, subtitle=subtitle))
 
     def save_animation(self, filename, frames=60, mode='turntable', fps=20, width=None,
                        height=None, scale=1, supersample=1, transparent=False,

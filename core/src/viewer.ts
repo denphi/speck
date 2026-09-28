@@ -12,7 +12,7 @@ const speckColors = require('./colors.js');
 const speckParse = require('./parse-async.js');
 const speckFormats = require('./formats.js');
 import { LoadPanel } from './progress';
-import { FilmStudio, FilmOptions, FilmResult, matchFraming } from './cinema';
+import { FilmStudio, FilmOptions, FilmResult, matchFraming, drawOverlays, VIDEO_RECIPES } from './cinema';
 export { VIDEO_SIZES, VIDEO_RECIPES, FilmOptions, FilmResult } from './cinema';
 const speckVideo = require('./video.js');
 // Whether this browser can encode MP4 video (WebCodecs).
@@ -185,6 +185,12 @@ const LOOK_LABELS: { [key: string]: string } = {
 // Menu items: [value, label] or [value, label, description (tooltip)].
 type MenuItem = [string, string] | [string, string, string];
 type MenuSection = (title: string, items: MenuItem[], current: string, pick: (v: string) => void) => void;
+// A text box in a menu (e.g. a video's title); change runs on each edit.
+type MenuField = (label: string, value: string, placeholder: string, change: (v: string) => void) => void;
+type MenuBuild = (section: MenuSection, field: MenuField) => void;
+
+// Lengths offered in the video menu, as multiples of a video's own length.
+const VIDEO_LENGTHS: { [name: string]: number } = { short: 0.6, normal: 1, long: 1.6 };
 
 // Image sizes by name: [width, height] in pixels, or null for the viewer's
 // own shape with its longer side at `long` pixels.
@@ -318,6 +324,9 @@ export interface ViewerHost {
   // Defaults for images saved from the toolbar's image menu (size, quality,
   // transparent, background, filename, or width / height / scale).
   imageOptions?(): any;
+  // Paints the page's own background under ('under') and over ('over', e.g. a
+  // vignette) an image, offered in the image menu as "Page background".
+  paintImageBackground?(ctx: CanvasRenderingContext2D, width: number, height: number, stage: string): void;
 }
 
 export interface RenderedImage {
@@ -367,14 +376,13 @@ export class SpeckViewer {
   private colorButton: HTMLElement | null = null;
   private videoButton: HTMLElement | null = null;
   private imageButton: HTMLElement | null = null;
-  private imageChoice: { size: string; quality: string; background: string } | null = null;
-  private videoSize = '1080p';
+  private imageChoice: { size: string; quality: string; background: string; text: string; title: string; subtitle: string } | null = null;
   private lastRecipe = '';
   private flashTimer: any = null;
   private lookButton: HTMLElement | null = null;
   private menuEl!: HTMLDivElement;
   private menuOwner: HTMLElement | null = null;
-  private menuBuild: ((section: MenuSection) => void) | null = null;
+  private menuBuild: MenuBuild | null = null;
   private lastFrameTime = 0;
   private loadTicket = 0;
   private loading = false;
@@ -1155,7 +1163,7 @@ export class SpeckViewer {
   }
 
   // Opens (or closes, if already open) a popup menu below a toolbar button.
-  private toggleMenu(owner: HTMLElement | null, label: string, build: (section: MenuSection) => void) {
+  private toggleMenu(owner: HTMLElement | null, label: string, build: MenuBuild) {
     const wasOpen = this.menuOwner === owner;
     if (this.menuOwner) this.closeMenu(false);
     if (wasOpen || !owner) return;
@@ -1208,11 +1216,30 @@ export class SpeckViewer {
         });
         menu.appendChild(item);
       }
+    }, (label, value, placeholder, change) => {
+      const row = document.createElement('label');
+      row.className = 'ipyspeck-menu-field';
+      const text = document.createElement('span');
+      text.textContent = label;
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = value;
+      input.placeholder = placeholder;
+      input.spellcheck = false;
+      input.addEventListener('change', () => change(input.value));
+      row.appendChild(text);
+      row.appendChild(input);
+      menu.appendChild(row);
     });
   }
 
   // Up / Down / Home / End move between items, Escape closes.
   private onMenuKey(e: KeyboardEvent) {
+    // Typing in a text box: only Escape leaves it (and closes the menu).
+    if ((e.target as HTMLElement).tagName === 'INPUT' && e.key !== 'Escape') {
+      if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+      return;
+    }
     const items = Array.from(this.menuEl.querySelectorAll('button')) as HTMLElement[];
     const at = items.indexOf(document.activeElement as HTMLElement);
     let next = -1;
@@ -1260,30 +1287,105 @@ export class SpeckViewer {
 
   // --- videos ---------------------------------------------------------------
 
-  // Ready-made videos for this structure (see recipes.js) and the size of
-  // the video; picking one plays it with the player, whose button saves it.
+  // Ready-made videos for this structure (see recipes.js) with their title,
+  // length, quality, frame rate and size; picking a video plays it with the
+  // player, whose Save video button makes the MP4 with these choices.
   toggleVideoMenu() {
-    this.toggleMenu(this.videoButton, 'Make a video', (section) => {
+    const v = this.videoChoice;
+    this.toggleMenu(this.videoButton, 'Make a video', (section, field) => {
+      this.textChoices(section, field, v, () => this.replayMenuVideo());
       const recipes = this.system ? this.studio.recipes().filter((r) => r.available && r.menu !== false) : [];
-      section('Make a video', recipes.map((r) => [r.name, r.label, r.description] as MenuItem), this.lastRecipe,
-        (name) => {
-          this.closeMenu(true);
-          this.lastRecipe = name;
-          try {
-            this.playFilm(name, this.videoOptions());
-          } catch (e) {
-            this.flash((e as Error).message || String(e), 9000);
-          }
+      section('Video', recipes.map((r) => [r.name, r.label, r.description] as MenuItem), this.lastRecipe, (name) => {
+        this.closeMenu(true);
+        this.lastRecipe = name;
+        this.replayMenuVideo(true);
+      });
+      const base = this.lastRecipe ? (VIDEO_RECIPES.find((r) => r.name === this.lastRecipe) || { seconds: 8 }).seconds : 0;
+      section('Length', Object.keys(VIDEO_LENGTHS).map((k) => [k, k.charAt(0).toUpperCase() + k.slice(1) +
+        (base ? ' (' + Math.round(base * VIDEO_LENGTHS[k]) + ' s)' : ''), ''] as MenuItem), v.length, (k) => {
+        v.length = k;
+        this.replayMenuVideo();
+      });
+      section('Quality', Object.keys(IMAGE_QUALITY).map((k) => [k, IMAGE_QUALITY[k].label, ''] as MenuItem), v.quality, (k) => {
+        v.quality = k;
+        this.updateMenuVideo();
+      });
+      section('Frame rate', [['24', '24 frames/s', 'Film look'], ['30', '30 frames/s', ''], ['60', '60 frames/s', 'Smoothest (slower to make)']],
+        String(v.fps), (k) => {
+          v.fps = parseInt(k, 10);
+          this.updateMenuVideo();
         });
-      section('Video size', VIDEO_MENU_SIZES, this.videoSize, (size) => {
-        this.videoSize = size;
-        if (this.studioInstance) this.studioInstance.setOption('size', size);
+      section('Video size', VIDEO_MENU_SIZES, v.size, (size) => {
+        v.size = size;
+        this.updateMenuVideo();
       });
     });
   }
 
+  // The last ready-made video played from the menu, with its choices (e.g.
+  // for writing the matching Python), or null.
+  get lastVideo(): any {
+    if (!this.lastRecipe) return null;
+    const recipe = VIDEO_RECIPES.find((r) => r.name === this.lastRecipe);
+    const seconds = Math.round((recipe ? recipe.seconds : 8) * VIDEO_LENGTHS[this.videoChoice.length] * 10) / 10;
+    const text = this.videoChoice.text === 'title';
+    return { recipe: this.lastRecipe, seconds: seconds, title: text ? this.videoChoice.title : '',
+             subtitle: text ? this.videoChoice.subtitle : '', size: this.videoChoice.size,
+             fps: this.videoChoice.fps, quality: this.videoChoice.quality };
+  }
+
+  // The image menu's current choices (size, quality, background).
+  get imageChoices(): { size: string; quality: string; background: string; text: string; title: string; subtitle: string } {
+    return { ...(this.imageChoice || { size: 'screen', quality: 'good', background: 'transparent', text: 'none', title: '', subtitle: '' }) };
+  }
+
+  private videoChoice = { text: 'none', title: '', subtitle: '', length: 'normal', quality: 'good', fps: 30, size: '1080p' };
+
+  // Text over the picture: none, or a title (and subtitle) typed in the menu.
+  private textChoices(section: MenuSection, field: MenuField, c: { text: string; title: string; subtitle: string },
+                      changed: () => void) {
+    section('Text', [['none', 'No text', 'Only the molecule'], ['title', 'Title', 'Add a title and subtitle']], c.text, (k) => {
+      c.text = k;
+      changed();
+    });
+    if (c.text === 'title') {
+      field('Title', c.title, 'e.g. Hemoglobin', (t) => {
+        c.title = t.trim();
+        changed();
+      });
+      field('Subtitle', c.subtitle, 'Optional, e.g. PDB 4HHB', (t) => {
+        c.subtitle = t.trim();
+        changed();
+      });
+    }
+  }
+  private menuVideoPlaying = false;
+
+  // Plays the menu's video again with its choices (after a change), or for
+  // the first time (`start`).
+  private replayMenuVideo(start = false) {
+    if (!start && !(this.menuVideoPlaying && this.studioInstance && this.studioInstance.previewing)) return;
+    const film = this.lastVideo;
+    if (!film) return;
+    try {
+      this.playFilm({ recipe: film.recipe, seconds: film.seconds, title: film.title || undefined,
+                      subtitle: film.subtitle || undefined }, this.videoOptions());
+      this.menuVideoPlaying = true;
+    } catch (e) {
+      this.flash((e as Error).message || String(e), 9000);
+    }
+  }
+
+  // The player's Save video uses the new quality, frame rate or size.
+  private updateMenuVideo() {
+    if (!this.studioInstance) return;
+    const o = this.videoOptions();
+    for (const k of ['size', 'fps', 'quality']) this.studioInstance.setOption(k, (o as any)[k]);
+  }
+
   private videoOptions(): FilmOptions {
-    return { size: this.videoSize, ...(this.host.videoOptions ? this.host.videoOptions() : {}) };
+    const v = this.videoChoice;
+    return { size: v.size, fps: v.fps, quality: v.quality, ...(this.host.videoOptions ? this.host.videoOptions() : {}) };
   }
 
   // --- colors ---------------------------------------------------------------
@@ -1388,11 +1490,18 @@ export class SpeckViewer {
   // Also: size (a name in IMAGE_SIZES, instead of width / height / scale)
   // and quality (a name in IMAGE_QUALITY; explicit samples, supersample and
   // aoRes win).
+  // title / subtitle: text in the lower left.
   renderImage(options: any, prepare?: (view: any) => void): Promise<RenderedImage> {
-    return this.queueExport(() => {
+    const shot = this.queueExport(() => {
       this.setStatus('Rendering image…');
       return this.renderOffscreen(this.imageSettings(options), prepare);
     });
+    if (!options || !options.title) return shot;
+    const hex = String(options.background || '#ffffff');
+    const n = parseInt(hex.replace('#', ''), 16);
+    const dark = !options.transparent && /^#?[0-9a-f]{6}$/i.test(hex) &&
+      (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255 < 0.45;
+    return shot.then((image) => this.onBackground(image, false, { text: String(options.title), subtitle: options.subtitle || '' }, dark));
   }
 
   // Options with `size` and `quality` names turned into pixels and samples.
@@ -1430,17 +1539,21 @@ export class SpeckViewer {
       this.imageChoice = {
         size: base.size && IMAGE_SIZES[base.size] ? base.size : 'screen',
         quality: base.quality && IMAGE_QUALITY[base.quality] ? base.quality : 'good',
-        background: base.transparent === false ? 'white' : 'transparent',
+        background: this.host.paintImageBackground ? 'page' : base.transparent === false ? 'white' : 'transparent',
+        text: 'none', title: '', subtitle: '',
       };
     }
     const c = this.imageChoice;
-    this.toggleMenu(this.imageButton, 'Save an image', (section) => {
+    this.toggleMenu(this.imageButton, 'Save an image', (section, field) => {
       section('Size', Object.keys(IMAGE_SIZES).map((k) => [k, IMAGE_SIZES[k].label, IMAGE_SIZES[k].hint] as MenuItem), c.size,
         (v) => { c.size = v; });
       section('Quality', Object.keys(IMAGE_QUALITY).map((k) => [k, IMAGE_QUALITY[k].label, IMAGE_QUALITY[k].hint] as MenuItem),
         c.quality, (v) => { c.quality = v; });
-      section('Background', [['transparent', 'Transparent', 'For placing on any background'], ['white', 'White', 'Ready for slides and documents']],
-        c.background, (v) => { c.background = v; });
+      const backgrounds: MenuItem[] = [['transparent', 'Transparent', 'For placing on any background'],
+        ['white', 'White', 'Ready for slides and documents']];
+      if (this.host.paintImageBackground) backgrounds.unshift(['page', 'Page background', 'The background shown behind the viewer']);
+      section('Background', backgrounds, c.background, (v) => { c.background = v; });
+      this.textChoices(section, field, c, () => undefined);
       section('', [['save', '⤓ Save image', 'Render at full quality and download the PNG']], '', () => {
         this.closeMenu(true);
         this.saveImageFile();
@@ -1448,18 +1561,57 @@ export class SpeckViewer {
     });
   }
 
+  // The image over the host's page background (see paintImageBackground)
+  // and / or with a title in the lower left.
+  private onBackground(image: RenderedImage, painted: boolean, title: { text: string; subtitle: string } | null,
+                       darkInk = false): Promise<RenderedImage> {
+    const paint: any = painted ? this.host.paintImageBackground : () => undefined;
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(new Blob([image.png], { type: 'image/png' }));
+      img.onload = () => {
+        const c = document.createElement('canvas');
+        c.width = image.width;
+        c.height = image.height;
+        const ctx = c.getContext('2d') as CanvasRenderingContext2D;
+        paint(ctx, c.width, c.height, 'under');
+        ctx.drawImage(img, 0, 0);
+        paint(ctx, c.width, c.height, 'over');
+        if (title) {
+          const dark = painted ? this.pageIsDark(ctx, c.width, c.height) : darkInk;
+          drawOverlays(ctx, [{ text: title.text, subtitle: title.subtitle, alpha: 1, position: 'bottom-left' }], '', c.width, c.height, dark);
+        }
+        URL.revokeObjectURL(url);
+        c.toBlob((b) => {
+          if (!b) return reject(new Error('the image could not be encoded'));
+          b.arrayBuffer().then((png) => resolve({ png: png, width: c.width, height: c.height }));
+        }, 'image/png');
+      };
+      img.onerror = () => reject(new Error('the image could not be read'));
+      img.src = url;
+    });
+  }
+
+  // Whether the painted page background is dark (for light title text).
+  private pageIsDark(ctx: CanvasRenderingContext2D, w: number, h: number): boolean {
+    const p = ctx.getImageData(Math.floor(w * 0.02), Math.floor(h * 0.98), 1, 1).data;
+    return (0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2]) / 255 < 0.45;
+  }
+
   // Renders the image chosen in the menu and downloads it.
   private saveImageFile() {
     const base = this.host.imageOptions ? this.host.imageOptions() || {} : {};
-    const c = this.imageChoice as { size: string; quality: string; background: string };
-    const options: any = { ...base, size: c.size, quality: c.quality, transparent: c.background === 'transparent' };
+    const c = this.imageChoice as { size: string; quality: string; background: string; text: string; title: string; subtitle: string };
+    const options: any = { ...base, size: c.size, quality: c.quality, transparent: c.background !== 'white' };
     // A size picked in the menu replaces the host's own pixel settings.
     delete options.width;
     delete options.height;
     delete options.scale;
     if (c.background === 'white') options.background = '#ffffff';
     const name = base.filename || 'speck.png';
-    this.renderImage(options).then((image) => {
+    const painted = c.background === 'page' && this.host.paintImageBackground;
+    const title = c.text === 'title' && c.title ? { text: c.title, subtitle: c.subtitle } : null;
+    this.renderImage(options).then((image) => (painted || title ? this.onBackground(image, !!painted, title) : image)).then((image) => {
       const blob = new Blob([image.png], { type: 'image/png' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
@@ -1648,6 +1800,7 @@ export class SpeckViewer {
 
   // Plays a film (a list of shots, see film.js) in the viewer, with a player bar.
   playFilm(film: any, options: FilmOptions = {}) {
+    this.menuVideoPlaying = false;
     this.studio.play(film, options);
   }
 

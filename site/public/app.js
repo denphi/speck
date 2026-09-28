@@ -49,8 +49,13 @@
     set: function (changes) { apply(changes); },   // toolbar buttons
     cameraChanged: function (camera) { state.camera = camera; },
     framesChanged: function (n) { setFrameCount(n); },
-    // The viewer's video button makes videos on the page's background.
-    videoOptions: function () { return pageVideoOptions(); }
+    // The viewer's video and image menus use the page's background.
+    videoOptions: function () { return pageVideoOptions(); },
+    imageOptions: function () { return {filename: "ipyspeck.png"}; },
+    paintImageBackground: function (ctx, w, h, stage) {
+      if (stage === "under") paintBackground(ctx, w, h);
+      else paintVignette(ctx, w, h);
+    }
   });
   window.speckViewer = viewer;   // for scripting the demo from the console
 
@@ -102,7 +107,6 @@
   var frameCount = 1;
   function setFrameCount(n) {
     frameCount = n;
-    if (film) updateRecipes();
     frameRow.querySelector("input").max = Math.max(0, n - 1);
     frameRow.style.display = n > 1 ? "" : "none";
   }
@@ -360,11 +364,11 @@
     info.textContent = source + " · reading…";
     return viewer.loadStructure().then(function () {
       if (state === next) info.textContent = source + " · " + viewer.atomCount.toLocaleString() + " atoms";
-      updateRecipes();
     });
   }
 
   function load(sample, button) {
+    lastExample = null;
     [].forEach.call(document.querySelectorAll("#samples button"), function (b) { b.classList.toggle("active", b === button); });
     if (sample.query) history.replaceState(null, "", "?q=" + encodeURIComponent(sample.query.trim()));
     var ticket = ++loadTicket;
@@ -454,160 +458,9 @@
     }
   }
 
-  // Size and quality choices (the same as the viewer's camera menu and save_image in Python).
-  var imageUI = {size: document.getElementById("exportSize"), quality: document.getElementById("exportQuality"),
-                 background: document.getElementById("exportBackground"), about: document.getElementById("exportAbout"),
-                 note: document.getElementById("exportNote"), button: document.getElementById("export")};
-  Object.keys(S.IMAGE_SIZES).forEach(function (k) {
-    var o = document.createElement("option"); o.value = k; o.textContent = S.IMAGE_SIZES[k].label; imageUI.size.appendChild(o);
-  });
-  Object.keys(S.IMAGE_QUALITY).forEach(function (k) {
-    var o = document.createElement("option"); o.value = k; o.textContent = S.IMAGE_QUALITY[k].label; imageUI.quality.appendChild(o);
-  });
-  imageUI.quality.value = "good";
-  var lastImage = null;
-  function describeImage() {
-    var el = document.getElementById("viewer"), info = S.IMAGE_SIZES[imageUI.size.value];
-    var px = info.size;
-    if (!px) {
-      var w = el.clientWidth, h = el.clientHeight, long = info.long;
-      px = w >= h ? [long, Math.round(long * h / w)] : [Math.round(long * w / h), long];
-    }
-    imageUI.about.textContent = px[0] + " × " + px[1] + " px · " + info.hint.replace(/^[^:]*: /, "").replace(/^\d+ × \d+, /, "");
-  }
-  imageUI.size.addEventListener("change", describeImage);
-  window.addEventListener("resize", describeImage);
-  describeImage();
-
-  imageUI.button.addEventListener("click", function () {
-    var bg = imageUI.background.value, button = this;
-    lastImage = {size: imageUI.size.value, quality: imageUI.quality.value, background: bg};
-    button.disabled = true;
-    imageUI.note.textContent = "Rendering…";
-    var started = performance.now();
-    viewer.renderImage({size: lastImage.size, quality: lastImage.quality, transparent: true}).then(function (image) {
-      if (bg === "transparent") return {png: image.png, width: image.width, height: image.height};
-      return new Promise(function (resolve) {
-        var img = new Image(), url = URL.createObjectURL(new Blob([image.png], {type: "image/png"}));
-        img.onload = function () {
-          var c = document.createElement("canvas");
-          c.width = image.width; c.height = image.height;
-          var ctx = c.getContext("2d");
-          if (bg === "white") { ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, c.width, c.height); }
-          else paintBackground(ctx, c.width, c.height);
-          ctx.drawImage(img, 0, 0);
-          if (bg === "page") paintVignette(ctx, c.width, c.height);
-          URL.revokeObjectURL(url);
-          c.toBlob(function (b) { b.arrayBuffer().then(function (png) { resolve({png: png, width: c.width, height: c.height}); }); }, "image/png");
-        };
-        img.src = url;
-      });
-    }).then(function (r) {
-      var url = URL.createObjectURL(new Blob([r.png], {type: "image/png"}));
-      var a = document.createElement("a");
-      a.href = url;
-      a.download = "ipyspeck.png";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
-      imageUI.note.textContent = "Saved ipyspeck.png to your downloads: " + r.width + " × " + r.height + " px, " +
-        (r.png.byteLength / 1e6).toFixed(1) + " MB, made in " + ((performance.now() - started) / 1000).toFixed(1) + " s.";
-    }).catch(function (e) { imageUI.note.textContent = "The image could not be made: " + e.message; })
-      .then(function () { button.disabled = false; });
-  });
-
-  // --- animate ----------------------------------------------------------------
-  // Ready-made videos (core/src/recipes.js, the same as in Python and the
-  // viewer's video button), previewed in the viewer or saved as an MP4 made
-  // in the browser.
-  var QUALITY = {draft: 64, good: 256, best: 512};
-  var film = {
-    kind: document.getElementById("filmKind"), seconds: document.getElementById("filmSeconds"),
-    secondsV: document.getElementById("filmSecondsV"), title: document.getElementById("filmTitle"),
-    size: document.getElementById("filmSize"), fps: document.getElementById("filmFps"),
-    quality: document.getElementById("filmQuality"), note: document.getElementById("filmNote"),
-    about: document.getElementById("filmAbout"),
-    preview: document.getElementById("filmPreview"), save: document.getElementById("filmSave")
-  };
-  var lastFilm = null;
-  S.VIDEO_RECIPES.filter(function (r) { return r.menu !== false; }).forEach(function (r) {
-    var o = document.createElement("option");
-    o.value = r.name;
-    o.textContent = r.label;
-    film.kind.appendChild(o);
-  });
-  function recipe() {
-    return S.VIDEO_RECIPES.filter(function (r) { return r.name === film.kind.value; })[0];
-  }
-  // An example's own film (made for that structure), shown in the menu while it is active.
-  var exampleFilm = null;
-  var exampleOption = document.createElement("option");
-  exampleOption.value = "example";
-  function useExample(ex) {
-    exampleFilm = ex;
-    exampleOption.textContent = ex.label + " (example)";
-    if (!exampleOption.parentNode) film.kind.appendChild(exampleOption);
-    film.kind.value = "example";
-    film.seconds.disabled = true;
-    film.title.value = ex.title || "";
-    describe();
-  }
-  function leaveExample() {
-    exampleFilm = null;
-    if (exampleOption.parentNode) exampleOption.remove();
-    film.seconds.disabled = false;
-    [].forEach.call(examplesBox.children, function (x) { x.classList.remove("active"); });
-  }
-  function showSeconds() { film.secondsV.textContent = film.seconds.value; }
-  // A short example of each ready-made video (hemoglobin; an NMR ensemble for 'trajectory').
-  var sample = document.getElementById("filmSample");
-  function describe() {
-    if (exampleFilm) {
-      sample.removeAttribute("src");
-      sample.hidden = true;
-      film.about.textContent = exampleFilm.about;
-      return;
-    }
-    sample.hidden = false;
-    var src = "videos/" + film.kind.value + ".mp4";
-    if (sample.getAttribute("src") !== src) sample.setAttribute("src", src);
-    var r = recipe(), ok = viewer.videoRecipes().filter(function (x) { return x.name === r.name; })[0];
-    film.about.textContent = r.description + (ok && !ok.available
-      ? (r.needs === "frames" ? " — needs a trajectory." : " — needs a ligand.") : ".");
-  }
-  // Ready-made videos this structure cannot make (no ligand, one frame) are disabled.
-  function updateRecipes() {
-    var avail = {};
-    viewer.videoRecipes().forEach(function (r) { avail[r.name] = r.available; });
-    [].forEach.call(film.kind.options, function (o) { o.disabled = avail[o.value] === false; });
-    if (!exampleFilm && film.kind.selectedOptions[0] && film.kind.selectedOptions[0].disabled) film.kind.value = "spin";
-    describe();
-  }
-  film.kind.addEventListener("change", function () {
-    if (film.kind.value === "example") return;
-    leaveExample();
-    film.seconds.value = recipe().seconds;
-    showSeconds();
-    describe();
-  });
-  film.seconds.addEventListener("input", showSeconds);
-  film.seconds.value = recipe().seconds;
-  showSeconds();
-  describe();
-  if (!S.videoSupported()) {
-    film.save.disabled = true;
-    film.note.textContent = "Saving a video needs Chrome, Edge, Safari 16.4+ or Firefox 130+; the preview works here.";
-  }
-
-  function filmSpec() {
-    var title = film.title.value.trim();
-    var spec = exampleFilm ? {shots: exampleFilm.shots} : {recipe: film.kind.value, seconds: parseFloat(film.seconds.value)};
-    if (title) spec.title = title;
-    return spec;
-  }
-
-  // The page's background and vignette, also used by the viewer's video button.
+  // --- videos and images -----------------------------------------------------
+  // Output lives in the viewer's toolbar (camera and clapperboard menus); the
+  // page supplies its background for both.
   function pageVideoOptions() {
     var b = background;
     return {
@@ -616,78 +469,53 @@
     };
   }
 
-  function filmOptions() {
-    return Object.assign({size: film.size.value, fps: parseInt(film.fps.value), quality: film.quality.value,
-                          samples: QUALITY[film.quality.value]}, pageVideoOptions());
-  }
-
-  function filmAction(run) {
-    try {
-      lastFilm = {spec: filmSpec(), options: filmOptions()};
-      viewer.filmDuration(lastFilm.spec);   // a clear message if it cannot be made
-      film.note.textContent = "";
-      return run(lastFilm);
-    } catch (e) {
-      film.note.textContent = e.message;
-    }
-  }
-  function preview() {
-    filmAction(function (f) { viewer.playFilm(f.spec, f.options); });
-  }
-  film.preview.addEventListener("click", preview);
-  film.save.addEventListener("click", function () {
-    filmAction(function (f) {
-      film.save.disabled = true;
-      var started = performance.now();
-      return viewer.downloadFilm(f.spec, f.options).then(function (r) {
-        film.note.textContent = "Saved ipyspeck.mp4 to your downloads: " + r.width + " × " + r.height + ", " +
-          (r.mp4.length / 1e6).toFixed(1) + " MB, made in " + Math.round((performance.now() - started) / 1000) + " s.";
-      }, function (e) {
-        film.note.textContent = e.message === "cancelled" ? "Cancelled." : "The video could not be made: " + e.message;
-      }).then(function () { film.save.disabled = false; });
-    });
-  });
-
-  // One click: load a structure and play a video of it: a ready-made one, or
-  // a film written for that structure (its own shots).
+  // Video examples, below the viewer: each loads a structure and plays a
+  // video made for it (a ready-made one, or the example's own shots).
   var GFP_CHROMOPHORE = {resName: "CRO", chain: "A"};
   var VIDEO_EXAMPLES = [
-    {label: "Hemoglobin tour", query: "4HHB", preset: "glossy", recipe: "tour", title: "Hemoglobin"},
-    {label: "Drug in its pocket", query: "1IEP", preset: "cover", recipe: "focus", title: "Imatinib in ABL kinase"},
-    {label: "Inside a nucleosome", query: "1KX5", preset: "matte", recipe: "reveal", title: "Nucleosome"},
-    {label: "NMR ensemble", query: "1D3Z", preset: "glossy", recipe: "trajectory", title: "Ubiquitin in solution"},
-    {label: "GFP story", query: "1EMA", preset: "glossy", title: "Green fluorescent protein",
-     about: "Made for GFP: half a turn, into the barrel to its chromophore, a focus pull, and back out.",
-     shots: [{type: "orbit", seconds: 5, degrees: 180, tilt: 15},
-             {type: "fly_to", selection: GFP_CHROMOPHORE, seconds: 3, face: true},
-             {type: "together", shots: [{type: "rock", seconds: 3, degrees: 12},
-                                        {type: "rack_focus", to: GFP_CHROMOPHORE, seconds: 2, strength: 0.7},
-                                        {type: "title", text: "The chromophore", subtitle: "Thr65-Tyr66-Gly67 (GFP S65T)", seconds: 3, position: "bottom-right"}]},
-             {type: "together", shots: [{type: "home", seconds: 4}, {type: "fade", settings: {dofStrength: 0}, seconds: 4}]}]}
+    {id: "hemoglobin_tour", label: "Hemoglobin tour", query: "4HHB", preset: "glossy",
+     film: {recipe: "tour", title: "Hemoglobin"}, caption: "<code>\"tour\"</code> flies to the heme and back"},
+    {id: "imatinib_focus", label: "A drug in its pocket", query: "1IEP", preset: "cover",
+     film: {recipe: "focus", title: "Imatinib in ABL kinase"}, caption: "<code>\"focus\"</code> pulls focus onto imatinib"},
+    {id: "nucleosome_reveal", label: "Inside a nucleosome", query: "1KX5", preset: "matte",
+     film: {recipe: "reveal", title: "Nucleosome"}, caption: "<code>\"reveal\"</code> cuts the nucleosome open"},
+    {id: "ubiquitin_nmr", label: "NMR ensemble", query: "1D3Z", preset: "glossy",
+     film: {recipe: "trajectory", title: "Ubiquitin in solution"}, caption: "<code>\"trajectory\"</code> plays an NMR ensemble"},
+    {id: "gfp_story", label: "GFP story", query: "1EMA", preset: "glossy",
+     caption: "A film written for GFP: into the barrel to its chromophore",
+     film: {title: "Green fluorescent protein", shots: [
+       {type: "orbit", seconds: 5, degrees: 180, tilt: 15},
+       {type: "fly_to", selection: GFP_CHROMOPHORE, seconds: 3, face: true},
+       {type: "together", shots: [{type: "rock", seconds: 3, degrees: 12},
+                                  {type: "rack_focus", to: GFP_CHROMOPHORE, seconds: 2, strength: 0.7},
+                                  {type: "title", text: "The chromophore", subtitle: "Thr65-Tyr66-Gly67 (GFP S65T)", seconds: 3, position: "bottom-right"}]},
+       {type: "together", shots: [{type: "home", seconds: 4}, {type: "fade", settings: {dofStrength: 0}, seconds: 4}]}]}}
   ];
-  var examplesBox = document.getElementById("filmExamples");
+  var lastExample = null;
+  var videoGrid = document.getElementById("videoGrid");
   VIDEO_EXAMPLES.forEach(function (ex) {
-    var b = document.createElement("button");
-    b.textContent = ex.label;
-    b.addEventListener("click", function () {
-      [].forEach.call(examplesBox.children, function (x) { x.classList.toggle("active", x === b); });
+    var fig = document.createElement("figure");
+    var button = document.createElement("button");
+    button.className = "video-example";
+    button.setAttribute("aria-label", "Load " + ex.label + " and play its video");
+    button.innerHTML = '<video src="videos/' + ex.id + '.mp4" autoplay muted loop playsinline></video>';
+    var cap = document.createElement("figcaption");
+    cap.innerHTML = "<strong>" + ex.label + "</strong> · " + ex.caption;
+    button.addEventListener("click", function () {
+      document.querySelector(".app").scrollIntoView({behavior: "smooth", block: "start"});
       query.value = ex.query;
       load({query: ex.query, preset: ex.preset}, null).then(function () {
-        if (ex.shots) {
-          useExample(ex);
-        } else {
-          leaveExample();
-          b.classList.add("active");
-          film.kind.value = ex.recipe;
-          film.seconds.value = recipe().seconds;
-          showSeconds();
-          film.title.value = ex.title;
+        try {
+          viewer.playFilm(ex.film, pageVideoOptions());
+          lastExample = ex;
+        } catch (e) {
+          info.textContent = e.message;
         }
-        updateRecipes();
-        preview();
       });
     });
-    examplesBox.appendChild(b);
+    fig.appendChild(button);
+    fig.appendChild(cap);
+    videoGrid.appendChild(fig);
   });
 
   // A shot as an ipyspeck.shots call.
@@ -747,38 +575,81 @@
     lines.push("w = " + call);
     lines = lines.concat(settings);
     lines.push(")");
-    var img = lastImage || {size: imageUI.size.value, quality: imageUI.quality.value, background: imageUI.background.value};
+    var img = viewer.imageChoices;
     var bgArg = img.background === "transparent" ? "" : ", transparent=False" +
       (img.background === "page" && background.center ? ', background="' + rgbHex(background.center) + '"' : "");
-    lines.push("", "# The image from Save an image (the widget's camera button offers the same choices):");
-    lines.push('w.save_image("figure.png", size=' + pyValue(img.size) + ", quality=" + pyValue(img.quality) + bgArg + ")");
+    lines.push("", "# An image with the camera menu's choices:");
+    var titleArg = img.text === "title" && img.title ? ", title=" + pyValue(img.title) + (img.subtitle ? ", subtitle=" + pyValue(img.subtitle) : "") : "";
+    lines.push('w.save_image("figure.png", size=' + pyValue(img.size) + ", quality=" + pyValue(img.quality) + bgArg + titleArg + ")");
     lines.push("w");
-    if (lastFilm && lastFilm.spec.shots) {
-      var o2 = lastFilm.options, f2 = lastFilm.spec;
-      lines.push("", "# The example's film; w.preview(film) plays it in the widget first:", "from ipyspeck import shots",
-                 "film = [" + f2.shots.map(pyShot).join(",\n        ") + "]");
-      lines.push('w.save_video("movie.mp4", film' + (f2.title ? ", title=" + pyValue(f2.title) : "") + ",\n             size=" + pyValue(o2.size) +
-                 ", fps=" + o2.fps + ", quality=" + pyValue(o2.quality) +
-                 (typeof o2.background === "object" ? ", background=" + pyValue(o2.background) : "") +
-                 (o2.vignette ? ", vignette=" + o2.vignette : "") + ")");
-    } else if (lastFilm) {
-      var o = lastFilm.options, f = lastFilm.spec;
-      lines.push("", "# The video from Make a video; w.preview(" + pyValue(f.recipe) + ") plays it in the widget first:");
-      lines.push('w.save_video("movie.mp4", ' + pyValue(f.recipe) + ", seconds=" + f.seconds +
-                 (f.title ? ", title=" + pyValue(f.title) : "") + ",\n             size=" + pyValue(o.size) +
-                 ", fps=" + o.fps + ", quality=" + pyValue(o.quality) +
-                 (typeof o.background === "object" ? ", background=" + pyValue(o.background) : "") +
-                 (o.vignette ? ", vignette=" + o.vignette : "") + ")");
+    var o = pageVideoOptions();
+    var look = (typeof o.background === "object" ? ", background=" + pyValue(o.background) : "") + (o.vignette ? ", vignette=" + o.vignette : "");
+    var v = viewer.lastVideo;
+    if (lastExample && lastExample.film.shots) {
+      var f = lastExample.film;
+      lines.push("", "# The " + lastExample.label + " example; w.preview(film) plays it in the widget first:", "from ipyspeck import shots",
+                 "film = [" + f.shots.map(pyShot).join(",\n        ") + "]");
+      lines.push('w.save_video("movie.mp4", film, title=' + pyValue(f.title) + look + ")");
+    } else if (lastExample) {
+      lines.push("", "# The " + lastExample.label + " example:");
+      lines.push('w.save_video("movie.mp4", ' + pyValue(lastExample.film.recipe) + ", title=" + pyValue(lastExample.film.title) + look + ")");
+    } else if (v) {
+      lines.push("", "# The video from the clapperboard menu; w.preview(" + pyValue(v.recipe) + ") plays it first:");
+      lines.push('w.save_video("movie.mp4", ' + pyValue(v.recipe) + ", seconds=" + v.seconds +
+                 (v.title ? ", title=" + pyValue(v.title) : "") + (v.subtitle ? ", subtitle=" + pyValue(v.subtitle) : "") +
+                 ",\n             size=" + pyValue(v.size) + ", fps=" + v.fps + ", quality=" + pyValue(v.quality) + look + ")");
     }
     return lines.join("\n");
   }
+  // --- export (header) ---------------------------------------------------------
+  // Save an image and Make a video open the viewer's own menus; Copy as Python
+  // shows this scene's code.
+  var exportButton = document.getElementById("exportButton"), exportMenu = document.getElementById("exportMenu");
+  var pythonPanel = document.getElementById("pythonPanel");
+  function setExportMenu(open) {
+    exportMenu.hidden = !open;
+    exportButton.setAttribute("aria-expanded", String(open));
+    if (open) exportMenu.querySelector("button").focus();
+  }
+  exportButton.addEventListener("click", function (e) {
+    e.stopPropagation();
+    setExportMenu(exportMenu.hidden);
+  });
+  document.addEventListener("click", function (e) {
+    if (!exportMenu.hidden && !exportMenu.contains(e.target)) setExportMenu(false);
+  });
+  exportMenu.addEventListener("keydown", function (e) {
+    var items = [].slice.call(exportMenu.querySelectorAll("button")), at = items.indexOf(document.activeElement);
+    if (e.key === "Escape") { setExportMenu(false); exportButton.focus(); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); items[(at + 1) % items.length].focus(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); items[(at - 1 + items.length) % items.length].focus(); }
+  });
+  exportMenu.addEventListener("click", function (e) {
+    var item = e.target.closest("button");
+    if (!item) return;
+    e.stopPropagation();
+    setExportMenu(false);
+    var act = item.dataset.act;
+    if (act === "python") {
+      document.getElementById("pythonCode").textContent = pythonCode();
+      pythonPanel.hidden = false;
+      document.getElementById("copyPython").focus();
+      return;
+    }
+    // The viewer's camera or clapperboard menu, with the viewer in sight.
+    document.querySelector(".app").scrollIntoView({block: "start"});
+    setTimeout(function () {
+      if (act === "image") viewer.toggleImageMenu(); else viewer.toggleVideoMenu();
+    }, 50);
+  });
+  document.getElementById("closePython").addEventListener("click", function () { pythonPanel.hidden = true; exportButton.focus(); });
+  pythonPanel.addEventListener("keydown", function (e) { if (e.key === "Escape") { pythonPanel.hidden = true; exportButton.focus(); } });
   document.getElementById("copyPython").addEventListener("click", function () {
-    var code = pythonCode(), pre = document.getElementById("pythonCode"), button = this;
-    pre.textContent = code;
-    pre.hidden = false;
+    var code = pythonCode(), button = this;
+    document.getElementById("pythonCode").textContent = code;
     var done = function (ok) {
-      button.textContent = ok ? "Copied" : "Select the code below to copy it";
-      setTimeout(function () { button.textContent = "Copy as Python"; }, 1800);
+      button.textContent = ok ? "Copied" : "Select the code to copy it";
+      setTimeout(function () { button.textContent = "Copy"; }, 1800);
     };
     try {
       navigator.clipboard.writeText(code).then(function () { done(true); }, function () { done(false); });

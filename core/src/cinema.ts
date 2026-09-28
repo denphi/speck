@@ -160,7 +160,7 @@ export function videoSize(options: FilmOptions, fallback: [number, number], maxS
 }
 
 // Draws the titles of a state (and a credit line) over a picture of size w x h.
-function drawOverlays(ctx: CanvasRenderingContext2D, overlays: any[], credit: string, w: number, h: number, dark: boolean) {
+export function drawOverlays(ctx: CanvasRenderingContext2D, overlays: any[], credit: string, w: number, h: number, dark: boolean) {
   const unit = Math.min(w, h);
   const margin = 0.06 * unit;
   const ink = dark ? '#ffffff' : '#111418';

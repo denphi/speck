@@ -22,7 +22,18 @@
   header h1 span { color: var(--muted); font-weight: 400; font-size: 15px; margin-left: 8px; }
   header h1 .version { font-size: 12px; font-weight: 600; vertical-align: 3px; margin-left: 4px; padding: 2px 7px;
     border-radius: 999px; background: rgba(47, 111, 224, 0.1); color: #2f6fe0; text-decoration: none; }
-  header nav { display: flex; gap: 18px; font-size: 14px; }
+  header nav { display: flex; gap: 18px; font-size: 14px; align-items: center; }
+  .export { position: relative; }
+  .export > button { padding: 5px 12px; }
+  .export-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; min-width: 260px; padding: 4px;
+    background: #fff; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12); }
+  .export-menu button { display: block; width: 100%; text-align: left; border: 0; border-radius: 6px; padding: 7px 10px; }
+  .export-menu button:hover, .export-menu button:focus-visible { background: var(--accent-soft); }
+  .export-menu small { display: block; color: var(--muted); font-size: 11.5px; }
+  .python-panel { position: fixed; right: 16px; top: 64px; z-index: 30; width: min(560px, calc(100vw - 32px));
+    padding: 10px 12px; background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16); }
+  .python-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .python-panel pre.code { max-height: 50vh; }
   .app { display: grid; grid-template-columns: minmax(0, 1fr) 320px; height: calc(100vh - 67px); min-height: 560px; }
   .stage { position: relative; min-width: 0; transition: background 0.3s; }
   #viewer { position: absolute; inset: 0; width: 100%; height: 100%; }
@@ -50,7 +61,6 @@
   .check input[type=color] { width: 44px; margin-left: auto; }
   pre.code { background: var(--code); border-radius: 6px; padding: 8px 10px; font-size: 11.5px; white-space: pre-wrap;
     word-break: break-word; margin: 8px 0 0; max-height: 260px; overflow: auto; }
-  #copyPython { margin-top: 8px; width: 100%; }
   .reset-all { margin-top: 10px; width: 100%; }
   .reset-sec { display: block; margin: 8px 0 0 auto; padding: 2px 8px; font-size: 12px; color: var(--muted);
     border-color: transparent; background: transparent; }
@@ -74,6 +84,8 @@
   .stage:has(.ipyspeck-player) .hint { display: none; }
   .video-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; margin-top: 12px; }
   .video-grid figure { margin: 0; }
+  .video-example { display: block; width: 100%; padding: 0; border: 0; border-radius: 8px; overflow: hidden; cursor: pointer; background: none; }
+  .video-example:hover, .video-example:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .video-grid video { width: 100%; aspect-ratio: 16 / 9; border-radius: 8px; background: #eef1f5; display: block; }
   .video-grid figcaption { font-size: 13px; color: var(--muted); margin-top: 4px; }
   .film-sample { display: block; width: 100%; aspect-ratio: 16 / 9; margin: 6px 0 0; border-radius: 6px;
@@ -120,8 +132,23 @@
     <a href="react.html">React example</a>
     <a href="https://pypi.org/project/ipyspeck/">PyPI</a>
     <a href="https://github.com/denphi/speck">GitHub</a>
+    <div class="export">
+      <button id="exportButton" class="primary" aria-haspopup="menu" aria-expanded="false" aria-controls="exportMenu">Export ▾</button>
+      <div class="export-menu" id="exportMenu" role="menu" hidden>
+        <button role="menuitem" data-act="image">Save an image…<small>PNG up to 4096 px, with sizes and quality</small></button>
+        <button role="menuitem" data-act="video">Make a video…<small>MP4: ready-made videos of this structure</small></button>
+        <button role="menuitem" data-act="python">Copy as Python<small>This scene as ipyspeck code</small></button>
+      </div>
+    </div>
   </nav>
 </header>
+
+<div class="python-panel" id="pythonPanel" role="dialog" aria-label="This scene as Python" hidden>
+  <div class="python-head"><strong>This scene as Python</strong>
+    <span><button id="copyPython" class="primary">Copy</button> <button id="closePython" aria-label="Close">×</button></span></div>
+  <pre class="code" id="pythonCode"></pre>
+  <p class="note">The same keyword arguments work with <code>stspeck.speck()</code> in Streamlit.</p>
+</div>
 
 <div class="app">
   <div class="stage">
@@ -171,38 +198,6 @@
       <label class="check"><input type="checkbox" id="bgVignette"> Vignette</label>
       <label class="row">Studio floor<input type="range" data-trait="floor" min="0" max="1" step="0.01" data-digits="2"><span class="v"></span></label>
       <label class="row">Reflection<input type="range" data-trait="floorReflection" min="0" max="1" step="0.01" data-digits="2"><span class="v"></span></label>
-      </div>
-    </details>
-    <details class="sec" data-sec="animate" open>
-      <summary>Make a video<span class="sum-hint">MP4</span></summary>
-      <div class="sec-body">
-      <p class="note">Try one: it loads the structure and plays its video.</p>
-      <div class="chips" id="filmExamples"></div>
-      <div class="field"><span>Video</span><select id="filmKind" aria-describedby="filmAbout"></select></div>
-      <video id="filmSample" class="film-sample" autoplay muted loop playsinline aria-label="What this video looks like"></video>
-      <p class="note" id="filmAbout"></p>
-      <label class="row">Length (s)<input type="range" id="filmSeconds" min="3" max="30" step="1"><span class="v" id="filmSecondsV"></span></label>
-      <label class="field"><span>Title</span><input type="text" id="filmTitle" placeholder="Optional, e.g. Hemoglobin" spellcheck="false"></label>
-      <div class="field"><span>Size</span><select id="filmSize"><option value="1080p" selected>HD 1080p (slides)</option><option value="4k">4K (large screens)</option><option value="square">Square (social media)</option><option value="vertical">Vertical 9:16 (phones)</option><option value="720p">720p (small file)</option></select></div>
-      <div class="field"><span>Smoothness</span><select id="filmFps"><option value="24">24 frames/s (film)</option><option value="30" selected>30 frames/s</option><option value="60">60 frames/s (slower)</option></select></div>
-      <div class="field"><span>Quality</span><select id="filmQuality"><option value="draft">Draft (fast)</option><option value="good" selected>Good</option><option value="best">Best (slow)</option></select></div>
-      <div class="load"><button id="filmPreview">&#9654; Preview</button><button class="primary" id="filmSave">Save video</button></div>
-      <p class="note" id="filmNote">The video is made in your browser; nothing is uploaded. The clapperboard button in the viewer offers the same videos.</p>
-      </div>
-    </details>
-    <details class="sec" data-sec="export" open>
-      <summary>Save an image<span class="sum-hint">PNG</span></summary>
-      <div class="sec-body">
-      <div class="field"><span>Size</span><select id="exportSize" aria-describedby="exportAbout"></select></div>
-      <p class="note" id="exportAbout"></p>
-      <div class="field"><span>Quality</span><select id="exportQuality"></select></div>
-      <div class="field"><span>Background</span><select id="exportBackground">
-        <option value="page" selected>This page's background</option><option value="white">White</option>
-        <option value="transparent">Transparent</option></select></div>
-      <button class="primary wide" id="export">Save image</button>
-      <p class="note" id="exportNote">Rendered in your browser at full quality; nothing is uploaded. The camera button in the viewer offers the same choices.</p>
-      <button id="copyPython">Copy as Python</button>
-      <pre class="code" id="pythonCode" hidden></pre>
       </div>
     </details>
     <details class="sec" data-sec="colors">
@@ -342,16 +337,12 @@ stspeck.speck(**stspeck.fetch_pdb("4HHB"),
   </div>
 
   <h2 id="videos">Videos</h2>
-  <p>One line in Python, or the clapperboard button in the viewer: ready-made videos that find the ligand or the
-     trajectory, fully shaded without flicker. Step-by-step
+  <p>Click one to load it and play its video; <strong>Save video</strong> in the player downloads the MP4. The
+     clapperboard button in the viewer makes ready-made videos of any structure, and one line in Python does the
+     same. Step-by-step
      <a href="https://github.com/denphi/speck/tree/master/jupyter/example/videos">notebooks</a> go from a first
      video to your own storyboard.</p>
-  <div class="video-grid">
-    <figure><video src="videos/tour.mp4" autoplay muted loop playsinline></video><figcaption><code>"tour"</code> flies to the ligand</figcaption></figure>
-    <figure><video src="videos/focus.mp4" autoplay muted loop playsinline></video><figcaption><code>"focus"</code> pulls focus onto it</figcaption></figure>
-    <figure><video src="videos/reveal.mp4" autoplay muted loop playsinline></video><figcaption><code>"reveal"</code> cuts it open</figcaption></figure>
-    <figure><video src="videos/trajectory.mp4" autoplay muted loop playsinline></video><figcaption><code>"trajectory"</code> plays an NMR ensemble</figcaption></figure>
-  </div>
+  <div class="video-grid" id="videoGrid"></div>
 
   <h2 id="gallery">Gallery</h2>
   <p>Rendered with ipyspeck, several with the macro depth of field. Click an image to load that scene in the
@@ -364,7 +355,7 @@ stspeck.speck(**stspeck.fetch_pdb("4HHB"),
   based on <a href="https://github.com/wwwtyro/speck">Speck</a> by wwwtyro
 </footer>
 
-<script src="speck.e05c10e18f.js"></script>
+<script src="speck.10cc68712a.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

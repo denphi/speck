@@ -444,3 +444,27 @@
   font-weight: 600;
   color: #1f6feb;
 }
+
+/* Text boxes in menus (e.g. a video's title) */
+.ipyspeck-menu-field {
+  display: block;
+  padding: 3px 12px 5px 26px;
+}
+
+.ipyspeck-menu-field span {
+  display: block;
+  color: #57606a;
+  font-size: 11px;
+  margin-bottom: 2px;
+}
+
+.ipyspeck-menu-field input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 3px 6px;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 5px;
+  font: inherit;
+  color: inherit;
+  background: #fff;
+}

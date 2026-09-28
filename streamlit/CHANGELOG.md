@@ -12,11 +12,12 @@
 ### Added
 - Image export with the same kind of choices as videos: the viewer's camera button opens a menu of sizes
   (the viewer's shape at 3000 px, largest 4096 px, HD 1080p, 4K, square, portrait 4:5, vertical 9:16),
-  qualities (draft, good, best) and backgrounds (transparent, white), then saves the PNG
+  qualities (draft, good, best), backgrounds (transparent, white) and an optional title, then saves the PNG
+- The video menu also sets text (none, or a title and subtitle), length, quality and frame rate
 - `export_size=` and `export_quality=` set the camera menu's starting choices
-- Demo site: a Save an image panel (size, quality, the page's background, white or transparent), included
-  in Copy as Python; the video examples include a film written for GFP, and 'showcase' is no longer
-  offered in the video menus (it remains available by name in Python)
+- Demo site: images, videos and Copy as Python are under Export in the header (the sidebar keeps model
+  settings); the video examples below the viewer load a structure and play its video, including a film
+  written for GFP; 'showcase' is no longer offered in the video menus (it remains available by name in Python)
 - Ready-made videos by name (`spin`, `rock`, `orbit`, `tour`, `focus`, `reveal`, `trajectory`, `showcase`):
   they find the structure's ligand or trajectory and turn a ligand toward the viewer; `seconds`, `target`,
   `title` and `subtitle` adjust them (`shots.RECIPES`, `shots.video()`)
@@ -43,7 +44,6 @@
 - Atoms with unreadable coordinates (a damaged or cut-short file) are skipped with a notice instead of
   hiding the whole structure; a file with no atoms says so
 - Crossfades that hold still render each picture once (about twice as fast)
-- Demo site: an Animate section with ready-made films, preview and MP4 export, included in Copy as Python
 
 ## [0.8.3] - 2026-09-27
 
