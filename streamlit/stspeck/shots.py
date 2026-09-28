@@ -30,7 +30,7 @@ are dicts like highlight's ({"chain": "A"}, {"resName": "HEM"}, ...).
 
 # This file is identical in ipyspeck and stspeck.
 
-__all__ = ['RECIPES', 'video', 'hold', 'turntable', 'rock', 'orbit', 'zoom', 'fly_to', 'home', 'rack_focus', 'cut_open',
+__all__ = ['RECIPES', 'video', 'visit', 'hold', 'turntable', 'rock', 'orbit', 'zoom', 'fly_to', 'home', 'rack_focus', 'cut_open',
            'fade', 'crossfade', 'trajectory', 'keyframes', 'title', 'together', 'loop', 'duration']
 
 EASES = ('linear', 'smooth', 'in', 'out', 'sine')
@@ -103,12 +103,14 @@ def zoom(seconds=2, factor=2, ease=None):
     return _shot('zoom', seconds=seconds, factor=factor, ease=ease)
 
 
-def fly_to(selection, seconds=3, zoom=None, face=False, ease=None):
-    """Center a selection and fit it in the picture, or magnify `zoom` times
-    instead of fitting. face=True also turns the structure so the selection
-    faces you (a ligand in a pocket is seen from outside, not through the
-    protein)."""
-    return _shot('fly_to', selection=selection, seconds=seconds, zoom=zoom, face=face or None, ease=ease)
+def fly_to(selection, seconds=3, zoom=None, face=False, width=None, ease=None):
+    """Center a selection and fit it in the picture; or show `width`
+    Angstrom across the picture (e.g. 30 for a binding site with its
+    surroundings), or magnify `zoom` times. face=True also turns the
+    structure so the selection faces you (a ligand in a pocket is seen from
+    outside, not through the protein)."""
+    return _shot('fly_to', selection=selection, seconds=seconds, zoom=zoom, face=face or None, width=width,
+                 ease=ease)
 
 
 def home(seconds=2, ease=None):
@@ -173,6 +175,35 @@ def title(text, seconds=3, subtitle=None, position='bottom-left', size=1, color=
     together() to show it during a camera move."""
     return _shot('title', text=text, seconds=seconds, subtitle=subtitle, position=position, size=size,
                  color=color, fade=fade)
+
+
+def visit(selection, seconds=6, title=None, subtitle=None, width=30, color=None, focus=True, swing=10):
+    """A stop on a guided tour of a structure: fly to `selection` and turn it
+    toward you, highlight it (a site's side chains are drawn over the
+    cartoon, the rest fades with the `ghost` setting), caption it with
+    `title` / `subtitle`, pull the focus onto it and swing gently around it.
+    A tour is a list of visits:
+
+        film = [shots.visit({"chain": "A", "resSeq": 315}, title="Gatekeeper"),
+                shots.visit({"chain": "A", "resName": "STI"}, title="Imatinib")]
+
+    width: Angstrom across the picture (30: the site and its surroundings;
+    None fits the selection); color: the site's color, e.g. "#ff9f1c" (""
+    for element colors; None keeps the current highlightColor);
+    focus=False keeps depth of field off; swing: degrees to each side while
+    there."""
+    fly = min(3.0, 0.45 * seconds)
+    changes = {'highlight': selection}
+    if color is not None:
+        changes['highlightColor'] = color
+    parts = [fly_to(selection, fly, face=True, width=width),
+             crossfade(min(1.0, fly), **changes),
+             rock(seconds, degrees=swing)]
+    if focus:
+        parts.append(rack_focus(selection, 0.5 * seconds, strength=0.3))
+    if title:
+        parts.append(_shot('title', text=title, subtitle=subtitle, seconds=seconds - 0.2))
+    return together(*parts, seconds=seconds)
 
 
 def together(*shots, seconds=None):

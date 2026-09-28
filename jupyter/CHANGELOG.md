@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Demo site: images, videos and Copy as Python are under Export in the header (the sidebar keeps model
   settings); the video examples below the viewer load a structure and play its video, including a film
   written for GFP; 'showcase' is no longer offered in the video menus (it remains available by name in Python)
+- `shots.visit(selection, seconds, title, subtitle, width, color)`: a stop on a guided tour (fly to a site,
+  turn it toward the viewer, color it, caption it, focus on it); `fly_to(width=...)` shows a set width in Å
+- Highlighted sites (at most 40 residues) show their side chains over the cartoon
+- An example guided tour of ABL kinase with imatinib (`example/videos/07_guided_tour.ipynb`)
 - Ready-made videos by name (`spin`, `rock`, `orbit`, `tour`, `focus`, `reveal`, `trajectory`, `showcase`):
   they find the structure's ligand or trajectory and turn a ligand toward the viewer; `seconds`, `target`,
   `title` and `subtitle` adjust them (`shots.RECIPES`, `shots.video()`)

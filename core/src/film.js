@@ -21,8 +21,9 @@ var glm = require("./gl-matrix");
 //   rock        swing back and forth and return (degrees=30, cycles=1)
 //   orbit       turn about an axis tilted toward the viewer (degrees=360, tilt=20)
 //   zoom        move closer (factor=2; below 1 moves away)
-//   fly_to      center a selection and fit it (zoom: magnification instead of
-//               fitting; face: also turn so the selection faces the viewer)
+//   fly_to      center a selection and fit it (width: Angstrom across the
+//               picture, or zoom: magnification, instead of fitting; face:
+//               also turn so the selection faces the viewer)
 //   home        back to the camera the film started with
 //   rack_focus  depth of field moves to a selection (to), from the current focus
 //   cut_open    the cutaway plane moves in (to=0.5, axis)
@@ -213,7 +214,8 @@ function compile(film, scene) {
                 } else {
                     var sel = scene.selection(shot.selection || {});
                     if (!sel) throw new Error("fly_to: the selection " + JSON.stringify(shot.selection) + " matches no atoms");
-                    var span = shot.zoom ? start.span / +shot.zoom : Math.max(12, 2.6 * sel.radius);
+                    // width: Angstrom across the picture's shorter side; zoom: magnification; else fit.
+                    var span = shot.width ? +shot.width : shot.zoom ? start.span / +shot.zoom : Math.max(12, 2.6 * sel.radius);
                     var q = start.q;
                     if (shot.face) q = facing(start.q, sel.center, scene.center);
                     to = {q: q, target: sel.center, span: span, settings: {}};

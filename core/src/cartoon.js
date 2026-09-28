@@ -358,9 +358,29 @@ function computeSecondaryStructure(segments) {
 //|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 // Atom visibility when the cartoon is shown.
 
+// Residues to draw as atoms over the cartoon: those of a highlight that
+// picks out a site (at most SITE_RESIDUES residues, e.g. a pocket or a
+// motif), not a whole chain.
+var SITE_RESIDUES = 40;
+function highlightedSite(s, view) {
+    var sel = view.highlight;
+    if (!sel || Object.keys(sel).length === 0) return null;
+    var picked = new Set();
+    var idx = require("./select").indices(s, sel);
+    for (var k = 0; k < idx.length; k++) {
+        var a = s.atoms[idx[k]];
+        if (a.polymer && a.residue) {
+            picked.add(a.residue);
+            if (picked.size > SITE_RESIDUES) return null;
+        }
+    }
+    return picked.size ? picked : null;
+}
+
 module.exports.applyVisibility = function(s, view) {
     var residues = getResidues(s);
     var mode = view.cartoonAtoms;
+    var site = (view.cartoon || view.surface) && mode !== "all" ? highlightedSite(s, view) : null;
     for (var i = 0; i < s.atoms.length; i++) {
         var a = s.atoms[i];
         var hidden = false;
@@ -373,7 +393,9 @@ module.exports.applyVisibility = function(s, view) {
             if (a.resName in WATER) {
                 hidden = true;
             } else if (a.polymer) {
-                hidden = !(mode === "sidechains" && !(a.name in BACKBONE));
+                // Side chains of the whole structure, or of a highlighted site.
+                var shown = mode === "sidechains" || (site !== null && site.has(a.residue));
+                hidden = !(shown && !(a.name in BACKBONE));
             } else {
                 hidden = mode === "none";
             }

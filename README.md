@@ -55,6 +55,25 @@ stspeck.speck(**stspeck.fetch_alphafold("Q8W3K0"), preset="cover", height=500)
 Structures load from PDB, mmCIF, SDF / MOL or XYZ files, RCSB (as mmCIF, so even ribosomes load, or as whole biological assemblies), AlphaFold DB, MD trajectories (MDTraj, MDAnalysis), ASE, RDKit or pymatgen. See the package
 READMEs for every setting: [ipyspeck](jupyter/README.md) · [stspeck](streamlit/README.md).
 
+## Videos
+
+<a href="media/videos/kinase_tour.mp4"><img src="media/videos/kinase_tour.gif" width="480" alt="A guided tour of ABL kinase with imatinib"/></a>
+
+A one-minute guided tour of ABL kinase with the leukemia drug imatinib (PDB 1IEP): the two lobes, the
+hinge, the gatekeeper Thr315, the DFG motif and the P-loop, each highlighted and captioned, then the drug
+([full video](media/videos/kinase_tour.mp4)). It is written as a list of stops, so the same
+[notebook](jupyter/example/videos/07_guided_tour.ipynb) tours any protein:
+
+```python
+stops = [("The hinge", {"chain": "A", "resSeq": [316, 317, 318]}, "Met318 hydrogen-bonds the drug"),
+         ("The gatekeeper, Thr315", {"chain": "A", "resSeq": 315}, "T315I causes drug resistance")]
+film = [shots.visit(site, 6, title=name, subtitle=why, color="#ff9f1c") for name, site, why in stops]
+w.save_video("tour.mp4", film)
+```
+
+Simpler videos are one line (`w.save_video("movie.mp4", "tour")`) or the clapperboard button in the
+viewer; see the [video notebooks](jupyter/example/videos).
+
 ## Gallery
 
 <table>

@@ -219,6 +219,23 @@ code, the viewer's clapperboard button offers the same videos and a **Save video
 
 Step-by-step notebooks, from a first video to your own storyboard: [example/videos](example/videos).
 
+#### A guided tour
+
+<img src="https://raw.githubusercontent.com/denphi/speck/master/media/videos/kinase_tour.gif" width="480" alt="A guided tour of ABL kinase with imatinib"/>
+
+A one-minute tour of ABL kinase with imatinib (PDB 1IEP), built from a list of stops with
+`shots.visit`, which flies to a site, colors it, shows its side chains, captions it and focuses on it:
+
+```python
+stops = [("The hinge", {"chain": "A", "resSeq": [316, 317, 318]}, "Met318 hydrogen-bonds the drug"),
+         ("The gatekeeper, Thr315", {"chain": "A", "resSeq": 315}, "T315I causes drug resistance"),
+         ("The DFG motif", {"chain": "A", "resSeq": [381, 382, 383]}, "flipped 'out' for the drug")]
+film = [shots.visit(site, 6, title=name, subtitle=why, color="#ff9f1c") for name, site, why in stops]
+w.save_video("tour.mp4", film)
+```
+
+The full film is in [example/videos/07_guided_tour.ipynb](example/videos/07_guided_tour.ipynb).
+
 For your own moves, put shots together:
 
 ```python
