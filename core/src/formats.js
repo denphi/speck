@@ -26,7 +26,50 @@ function parse(text, onProgress) {
     parsed.format = format;
     parsed.residues = format === "mmcif" || format === "pdb";
     parsed.bonds = parsed.bonds || [];
+    dropUnreadable(parsed);
     return parsed;
+}
+
+function finite(a) {
+    return isFinite(a.x) && isFinite(a.y) && isFinite(a.z);
+}
+
+// Leaves out atoms without three readable coordinates (a damaged line, or
+// the last line of an interrupted download), with the bonds that use them,
+// and frames with unreadable coordinates (e.g. a truncated last model): one
+// NaN would otherwise spread through centering and hide the whole
+// structure. Sets parsed.skipped and parsed.skippedFrames (counts).
+function dropUnreadable(parsed) {
+    var atoms = parsed.atoms, n = atoms.length, kept = 0;
+    var index = new Int32Array(n);
+    for (var i = 0; i < n; i++) index[i] = finite(atoms[i]) ? kept++ : -1;
+    parsed.skipped = n - kept;
+    var frames = parsed.frames || [];
+    if (parsed.skipped) {
+        parsed.atoms = atoms.filter(function(a, k) { return index[k] >= 0; });
+        parsed.bonds = parsed.bonds.filter(function(b) { return index[b[0]] >= 0 && index[b[1]] >= 0; })
+            .map(function(b) { return [index[b[0]], index[b[1]]]; });
+        frames = frames.map(function(f) {
+            if (f.length !== 3 * n) return f;
+            var g = new Float32Array(3 * kept);
+            for (var k = 0; k < n; k++) {
+                var j = index[k];
+                if (j >= 0) {
+                    g[3 * j] = f[3 * k]; g[3 * j + 1] = f[3 * k + 1]; g[3 * j + 2] = f[3 * k + 2];
+                }
+            }
+            return g;
+        });
+    }
+    var size = 3 * kept;
+    var good = frames.filter(function(f, k) {
+        if (k === 0) return true;
+        if (f.length !== size) return false;
+        for (var c = 0; c < f.length; c++) if (!isFinite(f[c])) return false;
+        return true;
+    });
+    parsed.skippedFrames = frames.length - good.length;
+    parsed.frames = good;
 }
 
 // Parsed structures cross to and from a Web Worker as columns of typed
@@ -74,7 +117,7 @@ function pack(parsed) {
     var packed = {
         format: parsed.format, residues: parsed.residues, count: n, strings: strings, xyz: xyz, symbol: symbol,
         cols: cols, bonds: bonds, helices: parsed.helices || [], sheets: parsed.sheets || [], cell: parsed.cell || null,
-        frames: parsed.frames
+        frames: parsed.frames, skipped: parsed.skipped || 0, skippedFrames: parsed.skippedFrames || 0
     };
     var transfer = [xyz.buffer, symbol.buffer, bonds.buffer];
     for (var c in cols) transfer.push(cols[c].buffer);
@@ -101,7 +144,7 @@ function unpack(p) {
     var bonds = [];
     for (var b = 0; b < p.bonds.length; b += 2) bonds.push([p.bonds[b], p.bonds[b + 1]]);
     return {format: p.format, residues: p.residues, atoms: atoms, bonds: bonds, helices: p.helices, sheets: p.sheets,
-            cell: p.cell, frames: p.frames};
+            cell: p.cell, frames: p.frames, skipped: p.skipped || 0, skippedFrames: p.skippedFrames || 0};
 }
 
 module.exports.detect = detect;

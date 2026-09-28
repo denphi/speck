@@ -762,7 +762,7 @@ class Speck(widgets.DOMWidget):
         self.send({'do': 'stopFilm'})
 
     def save_video(self, filename='movie.mp4', film='spin', seconds=None, target=None, title=None,
-                   subtitle=None, size='1080p', fps=30, quality='good', background='#ffffff',
+                   subtitle=None, size=None, fps=None, quality='good', background='#ffffff',
                    vignette=0.0, motion_blur=0, credit=None, samples=None, aoRes=1024, supersample=1,
                    bitrate=None, callback=None):
         """Render a video of the structure and save it next to the notebook.
@@ -778,9 +778,10 @@ class Speck(widgets.DOMWidget):
         shots.RECIPES. You can also pass your own list of shots.
 
         seconds: length of a ready-made video. title / subtitle: text shown
-        over the first seconds. size: '1080p' (default), '720p', '1440p',
-        '4k', 'square', 'vertical' (9:16, phones), 'portrait' (4:5) or
-        (width, height). fps: frames per second. quality: 'draft' (fast
+        over the first seconds. size: '1080p' (default; '480p' for GIFs),
+        '720p', '1440p', '4k', 'square', 'vertical' (9:16, phones),
+        'portrait' (4:5) or (width, height). fps: frames per second (default
+        30; 15 for GIFs, which grow quickly). quality: 'draft' (fast
         preview), 'good' or 'best'. background: a color, a list of colors
         (vertical gradient) or {'center': ..., 'edge': ...} (radial).
         vignette: darker corners, 0 - 1. motion_blur: e.g. 4 for smoother
@@ -796,6 +797,10 @@ class Speck(widgets.DOMWidget):
         """
         spec = _shots.spec(film, seconds, target, title, subtitle)
         ext = os.path.splitext(filename)[1].lower()
+        if size is None:
+            size = '480p' if ext == '.gif' else '1080p'
+        if fps is None:
+            fps = 15 if ext == '.gif' else 30
         if ext not in ('.mp4', '.gif', '.webm', '.mov', ''):
             raise ValueError('unsupported video format %r (use .mp4, .gif, .webm, .mov or a folder name)' % ext)
         if quality not in _QUALITY:
@@ -815,8 +820,9 @@ class Speck(widgets.DOMWidget):
                 callback(filename)
 
         self._request('saveVideo', 'video', filename, done, options, fps=fps, chunks={})
-        print('Making %s: %.0f seconds of video, %s. Progress is shown in the viewer; '
-              'the file is saved here when it is done.' % (filename, _shots.spec_seconds(spec), _size_label(size)))
+        print('Making %s: %.0f seconds of video, %s. It starts once the viewer is on screen and shows '
+              'its progress there; the file is saved here when it is done.'
+              % (filename, _shots.spec_seconds(spec), _size_label(size)))
 
     def _request(self, do, kind, filename, callback, options, **extra):
         rid = uuid.uuid4().hex

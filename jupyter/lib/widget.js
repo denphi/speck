@@ -10,9 +10,20 @@ const viewer_1 = require("../../core/lib/viewer");
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const inflate = require('../../core/lib/inflate.js');
 require("../../core/css/speck.css");
+// Requests that send a result back to Python, with the event of the reply.
+const EXPORT_REPLIES = { saveImage: 'image', saveAnimation: 'frame', saveVideo: 'video' };
 class SpeckModel extends base_1.DOMWidgetModel {
     defaults() {
         return Object.assign(Object.assign(Object.assign({}, super.defaults()), { _model_name: SpeckModel.model_name, _model_module: SpeckModel.model_module, _model_module_version: SpeckModel.model_module_version, _view_name: SpeckModel.view_name, _view_module: SpeckModel.view_module, _view_module_version: SpeckModel.view_module_version, data: '', _data: null, _trajectory: null, toolbar: true, camera: {}, nframes: 1 }), viewer_1.VIEW_DEFAULTS);
+    }
+    initialize(attributes, options) {
+        super.initialize(attributes, options);
+        this.speckViews = [];
+        this.pending = [];
+        this.on('msg:custom', (message) => {
+            if (this.speckViews.length === 0)
+                this.pending.push(message);
+        });
     }
 }
 exports.SpeckModel = SpeckModel;
@@ -123,8 +134,16 @@ class SpeckView extends base_1.DOMWidgetView {
             }
         }, this);
         this.model.on('msg:custom', this.handleCustomMessage, this);
+        const model = this.model;
+        model.speckViews.push(this);
+        for (const message of model.pending.splice(0))
+            this.handleCustomMessage(message);
     }
     remove() {
+        const views = this.model.speckViews;
+        const at = views.indexOf(this);
+        if (at >= 0)
+            views.splice(at, 1);
         this.viewer.destroy();
         return super.remove();
     }
@@ -160,7 +179,20 @@ class SpeckView extends base_1.DOMWidgetView {
             }
         }, fail);
     }
+    // Requests run once the structure is on screen. Exports are answered by
+    // the first view only, so a widget shown twice renders them once.
     handleCustomMessage(message) {
+        const reply = EXPORT_REPLIES[message.do];
+        if (reply && this.model.speckViews[0] !== this)
+            return;
+        this.viewer.whenLoaded().then(() => this.runMessage(message), (e) => {
+            if (reply)
+                this.model.send({ event: reply, id: message.id, error: e.message }, {});
+            else if (message.do === 'playFilm')
+                this.viewer.showNotice('Video: ' + e.message);
+        });
+    }
+    runMessage(message) {
         const viewer = this.viewer;
         switch (message.do) {
             case 'frontView':
@@ -190,7 +222,7 @@ class SpeckView extends base_1.DOMWidgetView {
                     viewer.playFilm(message.film, message.options || {});
                 }
                 catch (e) {
-                    viewer.showNotice('Film preview: ' + (e.message || e));
+                    viewer.showNotice('Video: ' + (e.message || e));
                 }
                 return;
             case 'stopFilm':

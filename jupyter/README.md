@@ -237,8 +237,8 @@ w.save_video("hemoglobin_story.mp4", film)
 
 Every frame is fully shaded, with ambient occlusion fixed to the molecule, so videos do not
 flicker. MP4s are made in the browser (Chrome, Edge, Safari 16.4+, Firefox 130+); `.gif`,
-`.webm`, `.mov` or a folder of PNGs are written in Python (Pillow; imageio with ffmpeg for
-`.webm` / `.mov`).
+`.webm`, `.mov` or a folder of PNGs are written in Python: `pip install "ipyspeck[video]"` adds
+what they need (Pillow, and imageio with ffmpeg).
 
 ### Structures from Python
 

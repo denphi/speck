@@ -14,6 +14,9 @@ import { SpeckViewer, VIEW_DEFAULTS, VIEW_TRAITS, videoSupported } from '../../c
 const inflate = require('../../core/lib/inflate.js');
 import '../../core/css/speck.css';
 
+// Requests that send a result back to Python, with the event of the reply.
+const EXPORT_REPLIES: { [request: string]: string } = { saveImage: 'image', saveAnimation: 'frame', saveVideo: 'video' };
+
 export class SpeckModel extends DOMWidgetModel {
   defaults() {
     return {
@@ -37,6 +40,21 @@ export class SpeckModel extends DOMWidgetModel {
   static serializers: ISerializers = {
     ...DOMWidgetModel.serializers,
   };
+
+  // Views showing this model, in the order they appeared. Requests from
+  // Python that arrive before any view exists (e.g. save_video() in the cell
+  // that displays the widget) wait in `pending` for the first one.
+  declare speckViews: SpeckView[];
+  declare pending: any[];
+
+  initialize(attributes: any, options: any) {
+    super.initialize(attributes, options);
+    this.speckViews = [];
+    this.pending = [];
+    this.on('msg:custom', (message: any) => {
+      if (this.speckViews.length === 0) this.pending.push(message);
+    });
+  }
 
   static model_name = 'SpeckModel';
   static model_module = MODULE_NAME;
@@ -152,9 +170,15 @@ export class SpeckView extends DOMWidgetView {
       this
     );
     this.model.on('msg:custom', this.handleCustomMessage, this);
+    const model = this.model as SpeckModel;
+    model.speckViews.push(this);
+    for (const message of model.pending.splice(0)) this.handleCustomMessage(message);
   }
 
   remove() {
+    const views = (this.model as SpeckModel).speckViews;
+    const at = views.indexOf(this);
+    if (at >= 0) views.splice(at, 1);
     this.viewer.destroy();
     return super.remove();
   }
@@ -194,7 +218,21 @@ export class SpeckView extends DOMWidgetView {
       }, fail);
   }
 
+  // Requests run once the structure is on screen. Exports are answered by
+  // the first view only, so a widget shown twice renders them once.
   handleCustomMessage(message: any) {
+    const reply = EXPORT_REPLIES[message.do];
+    if (reply && (this.model as SpeckModel).speckViews[0] !== this) return;
+    this.viewer.whenLoaded().then(
+      () => this.runMessage(message),
+      (e: Error) => {
+        if (reply) this.model.send({ event: reply, id: message.id, error: e.message }, {});
+        else if (message.do === 'playFilm') this.viewer.showNotice('Video: ' + e.message);
+      }
+    );
+  }
+
+  private runMessage(message: any) {
     const viewer = this.viewer;
     switch (message.do) {
       case 'frontView':

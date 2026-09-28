@@ -48,6 +48,11 @@ dependencies = [
 version = "0.8.3"
 
 [project.optional-dependencies]
+# GIF, WebM and MOV videos (MP4 needs nothing: the browser makes it)
+video = [
+    "Pillow",
+    "imageio[ffmpeg]",
+]
 docs = [
     "jupyter_sphinx",
     "nbsphinx",

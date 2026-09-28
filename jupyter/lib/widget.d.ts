@@ -16,6 +16,9 @@ export declare class SpeckModel extends DOMWidgetModel {
         nframes: number;
     };
     static serializers: ISerializers;
+    speckViews: SpeckView[];
+    pending: any[];
+    initialize(attributes: any, options: any): void;
     static model_name: string;
     static model_module: any;
     static model_module_version: any;
@@ -35,4 +38,5 @@ export declare class SpeckView extends DOMWidgetView {
     remove(): any;
     private saveVideo;
     handleCustomMessage(message: any): void;
+    private runMessage;
 }

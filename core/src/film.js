@@ -246,7 +246,7 @@ function compile(film, scene) {
                 s.settings.dofFocus = u >= 1 && typeof toSel === "object" ? toSel : {};
                 s.settings.dofPosition = u >= 1 && typeof toSel === "object" ? b : lerp(a, b, u);
                 // Blur fades in over the first third when depth of field was off.
-                s.settings.dofStrength = lerp(startStrength, strength, Math.min(1, 3 * (t / Math.max(duration, 1e-6))));
+                s.settings.dofStrength = lerp(startStrength, strength, duration > 0 ? Math.min(1, 3 * t / duration) : 1);
             }};
         }
         if (type === "cut_open" || type === "fade") {

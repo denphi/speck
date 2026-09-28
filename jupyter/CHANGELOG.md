@@ -28,6 +28,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   browser; GIF, WebM, MOV or PNG frames written in Python) and `Speck.keyframe()` for `shots.keyframes`;
   `save_video("movie.mp4")` alone makes a spin, `quality='draft' | 'good' | 'best'`, and the viewer says
   when the file is saved
+- Requests made before the viewer has loaded (e.g. `display(w); w.save_video(...)` in one cell) wait
+  for the structure instead of being lost; a widget shown twice renders an export once
+- Videos and images keep what is on screen when their shape differs from the viewer's (zoomed-in views
+  are no longer refitted to the whole structure)
+- Loading another structure during a video export stops it with a message instead of saving blank frames
+- Atoms with unreadable coordinates (a damaged or cut-short file) are skipped with a notice instead of
+  hiding the whole structure; a file with no atoms says so
+- GIFs default to 480p at 15 fps; `pip install "ipyspeck[video]"` adds what GIF, WebM and MOV need
+- Crossfades that hold still render each picture once (about twice as fast)
 - Demo site: an Animate section with ready-made films, preview and MP4 export, included in Copy as Python
 
 ## [0.8.3] - 2026-09-27

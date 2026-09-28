@@ -12,7 +12,7 @@ const speckColors = require('./colors.js');
 const speckParse = require('./parse-async.js');
 const speckFormats = require('./formats.js');
 import { LoadPanel } from './progress';
-import { FilmStudio, FilmOptions, FilmResult } from './cinema';
+import { FilmStudio, FilmOptions, FilmResult, matchFraming } from './cinema';
 export { VIDEO_SIZES, VIDEO_RECIPES, FilmOptions, FilmResult } from './cinema';
 const speckVideo = require('./video.js');
 // Whether this browser can encode MP4 video (WebCodecs).
@@ -305,6 +305,8 @@ export interface RenderedImage {
 
 const CANCELLED = { cancelled: true };
 
+const NO_ATOMS = 'No atoms found. Is this a PDB, mmCIF, SDF or XYZ file?';
+
 function megabytes(n: number): string {
   return n >= 1e6 ? (n / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1e3)) + ' kB';
 }
@@ -372,6 +374,7 @@ export class SpeckViewer {
   private cameraTimer: any = null;
   private exportQueue: Promise<void> = Promise.resolve();
   private studioInstance: FilmStudio | null = null;
+  private waiters: { resolve: () => void; reject: (e: Error) => void }[] = [];
   private reflowHandler = () => this.reflow();
 
   constructor(el: HTMLElement, host: ViewerHost) {
@@ -522,10 +525,16 @@ export class SpeckViewer {
     this.updateToolbar();
   }
 
-  // A message over the viewer until dismissed (e.g. a version mismatch).
-  showNotice(text: string) {
+  // A message over the viewer until dismissed (e.g. a version mismatch). A
+  // notice with the same key replaces the previous one.
+  showNotice(text: string, key = '') {
+    if (key) {
+      const old = this.el.querySelector('.ipyspeck-notice[data-key="' + key + '"]');
+      if (old) old.remove();
+    }
     const notice = document.createElement('div');
     notice.className = 'ipyspeck-notice';
+    if (key) notice.dataset.key = key;
     notice.setAttribute('role', 'alert');
     notice.textContent = text;
     const close = document.createElement('button');
@@ -654,6 +663,8 @@ export class SpeckViewer {
       return Promise.resolve();
     }
     this.stopFilm();
+    // A video being made of the previous structure cannot continue.
+    if (this.studioInstance) this.studioInstance.cancel('a new structure was loaded while the video was being made');
     const text = this.host.get('data') || '';
     const ticket = ++this.loadTicket;
     // The new structure is built with the current settings.
@@ -662,8 +673,15 @@ export class SpeckViewer {
       this.loading = false;
       const parsed = speckParse.parse(text);
       this.showParsed(parsed);
+      if (parsed.atoms.length > 0) {
+        this.panel.finish(true);
+        this.reportSkipped(parsed);
+        this.settleWaiters();
+      } else if (text.trim()) {
+        this.panel.fail(NO_ATOMS);
+        this.settleWaiters(NO_ATOMS);
+      }
       // No data yet (e.g. still arriving): keep the host's loading steps.
-      if (text) this.panel.finish(parsed.atoms.length > 0);
       return Promise.resolve();
     }
     this.loading = true;
@@ -681,7 +699,9 @@ export class SpeckViewer {
       .catch((err: any) => {
         if (ticket !== this.loadTicket || err === CANCELLED) return;
         this.loading = false;
-        this.panel.fail('Could not read the structure: ' + (err && err.message ? err.message : err));
+        const message = 'Could not read the structure: ' + (err && err.message ? err.message : err);
+        this.panel.fail(message);
+        this.settleWaiters(message);
       });
   }
 
@@ -732,7 +752,8 @@ export class SpeckViewer {
     };
     if (parsed.atoms.length === 0) {
       this.loading = false;
-      this.panel.fail('No atoms found in the file');
+      this.panel.fail(NO_ATOMS);
+      this.settleWaiters(NO_ATOMS);
       return;
     }
     let system: any = null;
@@ -786,6 +807,38 @@ export class SpeckViewer {
       this.scheduleCameraSync();
     }
     this.panel.finish(true);
+    this.reportSkipped(parsed);
+    this.settleWaiters();
+  }
+
+  // Lines the parser could not read (a damaged or cut-short file) are left out; say so.
+  private reportSkipped(parsed: any) {
+    const parts: string[] = [];
+    if (parsed.skipped) parts.push(count(parsed.skipped, 'atom') + ' with unreadable coordinates');
+    if (parsed.skippedFrames) parts.push(count(parsed.skippedFrames, 'incomplete frame'));
+    if (parts.length) {
+      this.showNotice('Skipped ' + parts.join(' and ') + ': the file may be damaged or cut short.', 'skipped');
+    } else {
+      const old = this.el.querySelector('.ipyspeck-notice[data-key="skipped"]');
+      if (old) old.remove();
+    }
+  }
+
+  // Resolves once a structure is on screen (at once if one is), for requests
+  // that arrive while it loads, e.g. save_video() in the cell that shows the
+  // widget. Rejects if the data cannot be read or has no atoms.
+  whenLoaded(): Promise<void> {
+    if (this.loaded && this.system.atoms.length > 0) return Promise.resolve();
+    return new Promise((resolve, reject) => this.waiters.push({ resolve, reject }));
+  }
+
+  private settleWaiters(error?: string) {
+    const waiters = this.waiters;
+    this.waiters = [];
+    for (const w of waiters) {
+      if (error) w.reject(new Error(error));
+      else w.resolve();
+    }
   }
 
   // Frames the host sends separately (MD trajectories): a Float32Array of
@@ -1366,9 +1419,10 @@ export class SpeckViewer {
     view.aoRes = options.aoRes || Math.max(1024, this.view.aoRes);
     view.aoSamples = options.samples || 1024;
     view.spf = Math.max(this.view.spf, 64);
-    // Same framing as on screen when the aspect ratio matches; otherwise fit.
+    // Same framing as on screen when the aspect ratio matches; otherwise the
+    // whole structure is refitted, or (zoomed in) all that is on screen kept.
     if (Math.abs(width / height - cssWidth / cssHeight) > 0.01) {
-      speckView.center(view, this.system);
+      matchFraming(view, this.view, this.system);
     }
     if (prepare) {
       prepare(view);
@@ -1482,8 +1536,8 @@ export class SpeckViewer {
     return this.studio.download(film, options);
   }
 
-  cancelFilm() {
-    if (this.studioInstance) this.studioInstance.cancel();
+  cancelFilm(reason?: string) {
+    if (this.studioInstance) this.studioInstance.cancel(reason);
   }
 
   // --- rendering -------------------------------------------------------------

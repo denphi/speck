@@ -21,6 +21,14 @@
 - Trajectories play smoothly in films: coordinates are interpolated between frames
 - `speck(..., film="tour" | shots.video(...) | [...], film_loop=True, video={...})`: the video plays in the
   component, and its Save video button saves the MP4; `example/video_app.py` makes a video of any PDB entry
+- Requests made before the viewer has loaded (e.g. `display(w); w.save_video(...)` in one cell) wait
+  for the structure instead of being lost; a widget shown twice renders an export once
+- Videos and images keep what is on screen when their shape differs from the viewer's (zoomed-in views
+  are no longer refitted to the whole structure)
+- Loading another structure during a video export stops it with a message instead of saving blank frames
+- Atoms with unreadable coordinates (a damaged or cut-short file) are skipped with a notice instead of
+  hiding the whole structure; a file with no atoms says so
+- Crossfades that hold still render each picture once (about twice as fast)
 - Demo site: an Animate section with ready-made films, preview and MP4 export, included in Copy as Python
 
 ## [0.8.3] - 2026-09-27

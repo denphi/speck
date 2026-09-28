@@ -77,6 +77,7 @@ export interface FilmOptions {
   credit?: string;
   bitrate?: number;
   transparent?: boolean;
+  // true: refit the whole structure; default: keep what is on screen.
   fit?: boolean;
   // Preview only
   loop?: boolean;
@@ -93,8 +94,8 @@ export interface FilmResult {
 }
 
 class Cancelled extends Error {
-  constructor() {
-    super('cancelled');
+  constructor(reason = 'cancelled') {
+    super(reason);
   }
 }
 
@@ -248,6 +249,37 @@ function paintVignette(ctx: CanvasRenderingContext2D, strength: number, w: numbe
   ctx.fillRect(0, 0, w, h);
 }
 
+// The visible rectangle of a view in rotated (screen-aligned) coordinates.
+// The canvas shows the bottom-left part of a square frame of side max(w, h).
+function visibleRect(v: any) {
+  const res = v.resolution;
+  const side = Math.max(res.x, res.y);
+  const half = 1 / (2 * v.zoom);
+  const w = res.x / (side * v.zoom), h = res.y / (side * v.zoom);
+  const cx = v.translation.x - half * (1 - res.x / side);
+  const cy = v.translation.y - half * (1 - res.y / side);
+  return { left: cx - w / 2, right: cx + w / 2, bottom: cy - h / 2, top: cy + h / 2, width: w, height: h };
+}
+
+// Frames `out` (a view at another size and shape, with live's rotation) like
+// the on-screen view `live`: when the whole structure is on screen, it is
+// fitted to the new shape; otherwise (zoomed in or panned) everything on
+// screen stays in the picture, with margins rather than cropping.
+export function matchFraming(out: any, live: any, system: any) {
+  const fit = { ...live, translation: { ...live.translation } };
+  speckView.center(fit, system);
+  const a = visibleRect(fit), b = visibleRect(live);
+  const tol = 0.03 * Math.max(a.width, a.height);
+  const showsAll = a.left >= b.left - tol && a.right <= b.right + tol && a.bottom >= b.bottom - tol && a.top <= b.top + tol;
+  if (showsAll) {
+    speckView.center(out, system);
+    return;
+  }
+  const cam = speckFilm.fromView(live);
+  const w = out.resolution.x, h = out.resolution.y, m = Math.min(w, h);
+  speckFilm.toView({ q: cam.q, target: cam.target, span: Math.max((b.width * m) / w, (b.height * m) / h) }, out);
+}
+
 function newCanvas(w: number, h: number): HTMLCanvasElement {
   const c = document.createElement('canvas');
   c.width = w;
@@ -278,6 +310,8 @@ export class FilmStudio {
   private built: string | null = null;
   private preview: Preview | null = null;
   private cancelRequested = false;
+  private cancelReason = 'cancelled';
+  private blendCache: { key: string; a: HTMLCanvasElement; b: HTMLCanvasElement } | null = null;
   private liveKey = '';
 
   constructor(ctx: StudioContext) {
@@ -403,9 +437,10 @@ export class FilmStudio {
 
   // --- export ---------------------------------------------------------------
 
-  // Stops the export in progress (it rejects with 'cancelled').
-  cancel() {
+  // Stops the export in progress: it rejects with 'cancelled', or the reason.
+  cancel(reason = 'cancelled') {
     this.cancelRequested = true;
+    this.cancelReason = reason;
   }
 
   // Renders a film. With format 'mp4' (default) the frames are encoded into
@@ -437,9 +472,11 @@ export class FilmStudio {
       base.aoRes = options.aoRes || Math.max(1024, live.aoRes);
       base.aoSamples = options.samples || QUALITY_SAMPLES[options.quality || 'good'] || 256;
       base.spf = 128;
-      const sameAspect = Math.abs(w / h - live.resolution.x / live.resolution.y) < 0.01;
-      if (options.fit || (options.fit === undefined && !sameAspect)) {
+      // The film starts from what is on screen (fit: true refits the whole structure).
+      if (options.fit === true) {
         speckView.center(base, system);
+      } else if (Math.abs(w / h - live.resolution.x / live.resolution.y) >= 0.01) {
+        matchFraming(base, live, system);
       }
       const timeline = speckFilm.compile(this.resolve(film), this.scene(base));
       const count = Math.max(1, Math.round(timeline.duration * fps));
@@ -452,6 +489,7 @@ export class FilmStudio {
       const dark = luminance(backgroundColor(options.background)) < 0.45;
       const started = performance.now();
       this.cancelRequested = false;
+      this.cancelReason = 'cancelled';
       this.built = liveKey;
       const panel = ctx.panel;
       panel.step('film', 'Rendering video', 0, count + ' frames · ' + w + ' × ' + h + ' · ' + fps + ' fps');
@@ -460,7 +498,8 @@ export class FilmStudio {
       renderer.setResolution(base.resolution, base.aoRes);
       try {
         for (let k = 0; k < count; k++) {
-          if (this.cancelRequested) throw new Cancelled();
+          if (this.cancelRequested) throw new Cancelled(this.cancelReason);
+          if (ctx.system() !== system) throw new Cancelled('a new structure was loaded while the video was being made');
           await this.composeFrame(timeline, k / fps, base, options, fps, out, layer, dark);
           if (writer) await writer.add(out);
           else if (onFrame) await onFrame(k, count, out);
@@ -483,6 +522,7 @@ export class FilmStudio {
         ctx.setExporting(false);
         ctx.restoreLive(this.built !== liveKey);
         this.built = null;
+        this.blendCache = null;
         panel.finish(false);
       }
     });
@@ -541,9 +581,29 @@ export class FilmStudio {
       await this.renderView(this.viewFor(state, base), state.frame, () => draw(alpha));
       return;
     }
-    // Crossfade: the picture before, then the new settings over it.
-    await this.renderView(this.viewFor(state, base), state.frame, () => draw(alpha));
-    await this.renderView(this.viewFor(state, base, state.blend.settings), state.frame, () => draw(alpha * state.blend.alpha));
+    // Crossfade: the picture before, then the new settings over it. Both are
+    // kept while the camera and settings stay the same (a crossfade usually
+    // holds still), so each is rendered once, not twice per frame.
+    const key = JSON.stringify([Array.from(state.q), state.target, state.span, state.settings, state.frame, state.blend.settings]);
+    let cache = this.blendCache;
+    if (!cache || cache.key !== key || cache.a.width !== w || cache.a.height !== h) {
+      const a = newCanvas(w, h), b = newCanvas(w, h);
+      const into = (c: HTMLCanvasElement) => () => {
+        const g = c.getContext('2d') as CanvasRenderingContext2D;
+        g.imageSmoothingEnabled = true;
+        (g as any).imageSmoothingQuality = 'high';
+        g.drawImage(this.ctx.canvas, 0, 0, w, h);
+      };
+      await this.renderView(this.viewFor(state, base), state.frame, into(a));
+      await this.renderView(this.viewFor(state, base, state.blend.settings), state.frame, into(b));
+      cache = this.blendCache = { key, a, b };
+    }
+    target.save();
+    target.globalAlpha = alpha;
+    target.drawImage(cache.a, 0, 0);
+    target.globalAlpha = alpha * state.blend.alpha;
+    target.drawImage(cache.b, 0, 0);
+    target.restore();
   }
 
   // Renders a view until its ambient occlusion is complete, then calls draw
@@ -555,7 +615,7 @@ export class FilmStudio {
     for (let i = 0; i < 2000; i++) {
       if (renderer.renderFixed(view, view.aoSamples)) break;
       await tick();
-      if (this.cancelRequested) throw new Cancelled();
+      if (this.cancelRequested) throw new Cancelled(this.cancelReason);
     }
     renderer.renderFixed(view, view.aoSamples);
     draw();
@@ -605,7 +665,9 @@ export class FilmStudio {
         const o = this.preview ? this.preview.options : options;
         this.stop();
         this.download(f, o).catch((e) => {
-          if (!(e instanceof Cancelled)) this.ctx.panel.fail('Video export failed: ' + (e.message || e));
+          if (!(e instanceof Cancelled) || e.message !== 'cancelled') {
+            this.ctx.panel.fail('Video export failed: ' + (e.message || e));
+          }
         });
       });
       save.className = 'ipyspeck-player-save';
