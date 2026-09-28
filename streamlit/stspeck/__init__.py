@@ -18,7 +18,7 @@ from ._io import (count_frames, fetch_alphafold, fetch_pdb, from_ase, from_mdana
                   from_pymatgen, from_rdkit, read_file)
 from . import shots
 
-__version__ = "0.8.3"
+__version__ = "0.8.4"
 
 __all__ = ["speck", "shots", "SETTINGS", "PRESETS", "count_frames", "fetch_alphafold", "fetch_pdb",
            "from_ase", "from_mdanalysis", "from_mdtraj", "from_pymatgen", "from_rdkit", "read_file"]

@@ -1,6 +1,11 @@
 # Changelog
 
-## [Unreleased]
+## [0.8.4] - 2026-09-27
+
+### Fixed
+- Downloads from RCSB and AlphaFold DB time out with a clear message instead of waiting forever; when
+  the AlphaFold lookup service is slow or down the model file is fetched directly; the demo's loading
+  panel offers Try again
 
 ### Changed
 - Faster, lighter rendering: a viewer uses about 60 - 70 % less GPU memory (render targets sized to the

@@ -719,8 +719,15 @@ export class SpeckViewer {
     this.panel.done(key, detail);
   }
 
-  progressFailed(message: string) {
+  // retry, optional: a Try again button that clears the panel and calls it.
+  progressFailed(message: string, retry?: () => void) {
     this.panel.fail(message);
+    if (retry) {
+      this.panel.action('Try again', () => {
+        this.panel.finish(false);
+        retry();
+      });
+    }
   }
 
   // Parses the host's data and shows it. Large texts are parsed in a Web

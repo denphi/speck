@@ -1,6 +1,6 @@
 {
   "name": "stspeck-frontend",
-  "version": "0.8.3",
+  "version": "0.8.4",
   "private": true,
   "description": "Streamlit frontend for stspeck; bundles the shared Speck viewer from ../../core",
   "scripts": {

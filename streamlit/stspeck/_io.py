@@ -6,9 +6,39 @@ Wrap network loaders in st.cache_data to avoid downloading on every rerun.
 """
 
 import json
+import urllib.error
 import urllib.request
 
 from . import _formats
+
+
+def _download(url, who, timeout=60):
+    """Text at `url`; a clear error instead of waiting forever when the server is slow or down."""
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as r:
+            return r.read().decode()
+    except urllib.error.HTTPError as e:
+        raise RuntimeError("%s answered %d for %s" % (who, e.code, url)) from None
+    except (urllib.error.URLError, OSError) as e:
+        raise RuntimeError("%s could not be reached (%s); check the connection and try again"
+                           % (who, getattr(e, "reason", e))) from None
+
+
+def _alphafold_url(uniprot_id):
+    """The latest AlphaFold DB model file of a UniProt accession; the file's
+    usual address when the lookup service is slow or down."""
+    acc = uniprot_id.strip().upper()
+    direct = "https://alphafold.ebi.ac.uk/files/AF-%s-F1-model_v6.pdb" % acc
+    try:
+        with urllib.request.urlopen("https://alphafold.ebi.ac.uk/api/prediction/%s" % acc, timeout=20) as r:
+            entry = json.load(r)[0]
+        return entry.get("pdbUrl") or direct
+    except urllib.error.HTTPError as e:
+        if e.code in (400, 404):
+            raise ValueError("AlphaFold DB has no model for %s (is it a UniProt accession?)" % acc) from None
+    except (urllib.error.URLError, OSError, ValueError, IndexError, KeyError):
+        pass
+    return direct
 
 
 def count_frames(data, trajectory=None):
@@ -56,18 +86,13 @@ def fetch_pdb(pdb_id, format="cif", assembly=None):
         raise ValueError("assemblies are available as mmCIF only (format='cif')")
     else:
         url = "https://files.rcsb.org/download/%s-assembly%d.cif" % (pdb_id.upper(), int(assembly))
-    with urllib.request.urlopen(url) as r:
-        return {"data": r.read().decode(), "cartoon": True}
+    return {"data": _download(url, "RCSB"), "cartoon": True}
 
 
 def fetch_alphafold(uniprot_id):
     """The latest AlphaFold DB model of a UniProt accession, shown as a cartoon
     colored by confidence (pLDDT)."""
-    api = "https://alphafold.ebi.ac.uk/api/prediction/%s" % uniprot_id
-    with urllib.request.urlopen(api) as r:
-        entry = json.load(r)[0]
-    with urllib.request.urlopen(entry["pdbUrl"]) as r:
-        return {"data": r.read().decode(), "cartoon": True, "cartoonColor": "plddt"}
+    return {"data": _download(_alphafold_url(uniprot_id), "AlphaFold DB"), "cartoon": True, "cartoonColor": "plddt"}
 
 
 def from_ase(atoms):

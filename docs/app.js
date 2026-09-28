@@ -291,11 +291,29 @@
   // replace a structure picked after it).
   var loadTicket = 0;
 
-  // Downloads text, reporting progress in the viewer's loading panel.
+  // fetch() that gives up when the server does not answer within `seconds`
+  // (a stalled request would otherwise leave the page waiting forever).
+  function fetchLimited(url, seconds, who) {
+    var ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
+    var timer = setTimeout(function () { if (ctl) ctl.abort(); }, seconds * 1000);
+    return fetch(url, ctl ? {signal: ctl.signal} : {}).then(function (r) {
+      clearTimeout(timer);
+      r.controller = ctl;
+      return r;
+    }, function (e) {
+      clearTimeout(timer);
+      throw new Error(e && e.name === "AbortError" ? who + " did not answer within " + seconds + " s"
+                                                   : who + " could not be reached (check the connection)");
+    });
+  }
+
+  // Downloads text, reporting progress in the viewer's loading panel. Gives
+  // up if no data arrives for 30 s.
   function fetchText(url, label) {
     label = label || "Downloading " + url.split("/").pop();
+    var who = url.split("/")[2];
     viewer.progress("download", label, 0);
-    return fetch(url).then(function (r) {
+    return fetchLimited(url, 30, who).then(function (r) {
       if (!r.ok) throw new Error(r.status + " for " + url);
       // Content-Length is the compressed size when the server gzips the
       // transfer, so it only gives a fraction while it is not exceeded.
@@ -304,8 +322,15 @@
         return r.text().then(function (t) { viewer.progressDone("download", mb(t.length)); return t; });
       }
       var reader = r.body.getReader(), chunks = [], got = 0;
+      function read() {
+        var stall = setTimeout(function () { if (r.controller) r.controller.abort(); }, 30000);
+        return reader.read().then(function (part) { clearTimeout(stall); return part; }, function (e) {
+          clearTimeout(stall);
+          throw new Error(e && e.name === "AbortError" ? "the download from " + who + " stalled" : e.message);
+        });
+      }
       function pump() {
-        return reader.read().then(function (part) {
+        return read().then(function (part) {
           if (part.done) {
             viewer.progressDone("download", mb(got));
             return new Blob(chunks).text();
@@ -335,14 +360,27 @@
       return fetchText("https://files.rcsb.org/download/" + file + ".cif", "Downloading " + file + " from RCSB")
         .then(function (t) { return {text: t, source: "RCSB " + file}; });
     }
-    viewer.progress("lookup", "Looking up " + query.toUpperCase() + " in AlphaFold DB");
-    return fetch("https://alphafold.ebi.ac.uk/api/prediction/" + encodeURIComponent(query.toUpperCase()))
-      .then(function (r) { if (!r.ok) throw new Error("no AlphaFold model for " + query); return r.json(); })
+    // AlphaFold DB: the lookup gives the latest model's file; if the lookup
+    // service is slow or down, the file is fetched from its usual address.
+    var acc = query.toUpperCase();
+    var direct = "https://alphafold.ebi.ac.uk/files/AF-" + encodeURIComponent(acc) + "-F1-model_v6.pdb";
+    viewer.progress("lookup", "Looking up " + acc + " in AlphaFold DB");
+    return fetchLimited("https://alphafold.ebi.ac.uk/api/prediction/" + encodeURIComponent(acc), 15, "AlphaFold DB")
+      .then(function (r) {
+        if (r.status === 404 || r.status === 400) throw {missing: true};
+        if (!r.ok) throw new Error("AlphaFold DB answered " + r.status);
+        return r.json();
+      })
       .then(function (entries) {
         viewer.progressDone("lookup", entries[0].entryId || "");
-        return fetchText(entries[0].pdbUrl, "Downloading the AlphaFold model");
+        return entries[0].pdbUrl || direct;
+      }, function (e) {
+        if (e && e.missing) throw new Error("AlphaFold DB has no model for " + acc + " (is it a UniProt accession or a PDB ID?)");
+        viewer.progressDone("lookup", "lookup unavailable; trying the model file directly");
+        return direct;
       })
-      .then(function (t) { return {text: t, source: "AlphaFold " + query.toUpperCase()}; });
+      .then(function (url) { return fetchText(url, "Downloading the AlphaFold model"); })
+      .then(function (t) { return {text: t, source: "AlphaFold " + acc}; });
   }
 
   // A new structure: a gallery scene's background does not carry over (one the
@@ -385,7 +423,7 @@
     }).catch(function (e) {
       if (ticket !== loadTicket) return;
       info.textContent = "Could not load: " + e.message;
-      viewer.progressFailed("Could not load: " + e.message);
+      viewer.progressFailed("Could not load: " + e.message, function () { load(sample, button); });
     });
   }
 
@@ -718,7 +756,7 @@
     }).catch(function (e) {
       if (ticket !== loadTicket) return;
       info.textContent = "Could not load: " + e.message;
-      viewer.progressFailed("Could not load: " + e.message);
+      viewer.progressFailed("Could not load: " + e.message, function () { loadScene(name); });
     });
   }
 
