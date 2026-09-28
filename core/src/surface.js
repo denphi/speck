@@ -351,23 +351,13 @@ module.exports.buildMesh = function(s, view) {
     // Soften the boundaries between atoms.
     vc = smooth(vc, geo.adjacency, 3, 0.5);
 
-    // Expand the quads to plain triangles for the renderer.
+    // Two triangles per quad, indexing the shared vertices (each vertex is
+    // stored and transformed once, not once per triangle).
     var nq = geo.quads.length / 4;
-    var position = new Float32Array(nq * 18);
-    var normal = new Float32Array(nq * 18);
-    var color = new Float32Array(nq * 18);
+    var index = new Uint32Array(nq * 6);
     var ORDER = [0, 1, 2, 0, 2, 3];
-    var o = 0;
     for (var qd = 0; qd < nq; qd++) {
-        for (var t = 0; t < 6; t++) {
-            var vi = geo.quads[4 * qd + ORDER[t]];
-            for (var c = 0; c < 3; c++) {
-                position[o + c] = geo.vertices[3 * vi + c];
-                normal[o + c] = geo.normals[3 * vi + c];
-                color[o + c] = vc[3 * vi + c];
-            }
-            o += 3;
-        }
+        for (var t = 0; t < 6; t++) index[6 * qd + t] = geo.quads[4 * qd + ORDER[t]];
     }
-    return {position: position, normal: normal, color: color, count: nq * 6};
+    return {position: geo.vertices, normal: geo.normals, color: vc, index: index, count: nq * 6};
 };

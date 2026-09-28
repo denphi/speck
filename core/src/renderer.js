@@ -36,7 +36,11 @@ var Select = require("./select");
 var parseColor = Select.parseColor;
 
 module.exports = function (canvas, resolution, aoResolution) {
+        // The camera describes a square frame of side m_resolution; the canvas
+        // shows its bottom-left rx x ry part, and the render targets cover
+        // just that part (not the whole square).
         let m_resolution = Math.max(resolution.x, resolution.y)
+        var rx = resolution.x, ry = resolution.y;
         var self = this;
 
         var range,
@@ -60,17 +64,23 @@ module.exports = function (canvas, resolution, aoResolution) {
 
         var tSceneColor, tSceneNormal, tSceneDepth,
             tRandRotDepth, tRandRotColor,
-            tAccumulator, tAccumulatorOut,
             tFXAA, tFXAAOut,
             tDOF,
             tAO;
+        // Ambient occlusion accumulates by ping-pong between two targets: each
+        // sample reads `read` and writes `write`, then they swap (no copies).
+        var acc = null, surfAcc = null;
+        // Stands in for layers that are not allocated (surface, shadows).
+        var tDummy = null;
+        // Set once a converged picture is on screen; nothing changes until reset().
+        var idleDisplayed = false;
 
         // Translucent surface layer. Its textures are bound to units 11-14 right
         // before each draw that samples them (units 0-10 hold the fixed textures).
-        var tSurfColor, tSurfNormal, tSurfDepth, tSurfAcc, tSurfAccOut, tRandRotDepthAll;
-        var fbSurfColor, fbSurfNormal, fbSurfAccumulator, fbRandRotAll;
+        var tSurfColor = null, tSurfNormal, tSurfDepth, tRandRotDepthAll;
+        var fbSurfColor, fbSurfNormal, fbRandRotAll;
         // Key-light shadows: depth map along the light and per-pixel visibility.
-        var tShadowMapColor, tShadowMap, tShadow;
+        var tShadowMapColor = null, tShadowMap, tShadow;
         var fbShadowMap, fbShadow;
         // 1x1 target for picking the depth under a point (focus by click).
         var tPickColor, tPickDepth, fbPick;
@@ -80,8 +90,7 @@ module.exports = function (canvas, resolution, aoResolution) {
 
         var fbSceneColor, fbSceneNormal,
             fbRandRot,
-            fbAccumulator,
-            fbFXAA,
+            fbFXAA, fbFXAA2,
             fbDOF,
             fbAO;
 
@@ -97,6 +106,7 @@ module.exports = function (canvas, resolution, aoResolution) {
 
         var ext;
         var instancing = null;
+        var elementIndexUint = null;
         var sceneVertices = 0;  // vertices drawn by one pass over the scene
 
         var sampleCount = 0,
@@ -128,14 +138,17 @@ module.exports = function (canvas, resolution, aoResolution) {
             // Initialize canvas/gl.
             canvas.width = resolution.x;
             canvas.height = resolution.y;
-            gl = canvas.getContext('webgl');
+            // All 3D drawing goes to textures; the canvas only receives the final
+            // full-screen pass, so it needs no multisampling, depth or stencil.
+            gl = canvas.getContext('webgl', {antialias: false, depth: false, stencil: false});
+            webgl.setup(gl);
             gl.enable(gl.DEPTH_TEST);
             gl.enable(gl.CULL_FACE);
             gl.clearColor(0,0,0,0);
             gl.clearDepth(1);
-            gl.viewport(0,0,m_resolution,m_resolution);
-
-            window.gl = gl; //debug
+            gl.viewport(0, 0, rx, ry);
+            // Indexed meshes with more than 65,536 vertices.
+            elementIndexUint = gl.getExtension("OES_element_index_uint");
 
             ext = webgl.getExtensions(gl, [
                 "EXT_frag_depth",
@@ -182,82 +195,125 @@ module.exports = function (canvas, resolution, aoResolution) {
 
         }
 
+        var depthOptions;
+
+        // Targets for a color texture (and optional depth), rx x ry.
+        function target(unit, withDepth) {
+            var t = new webgl.Texture(gl, unit, null, rx, ry);
+            return {t: t, fb: new webgl.Framebuffer(gl, [t], withDepth)};
+        }
+
+        function release(list) {
+            list.forEach(function(o) { if (o) o.destroy(); });
+        }
+
+        function releaseSurfaceLayer() {
+            if (!tSurfColor) return;
+            release([tSurfColor, tSurfNormal, tSurfDepth, fbSurfColor, fbSurfNormal, tRandRotDepthAll, fbRandRotAll]);
+            release([surfAcc.read.t, surfAcc.read.fb, surfAcc.write.t, surfAcc.write.fb]);
+            tSurfColor = surfAcc = null;
+        }
+
+        function releaseShadowLayer() {
+            if (!tShadowMapColor) return;
+            release([tShadowMapColor, tShadowMap, fbShadowMap, tShadow, fbShadow]);
+            tShadowMapColor = null;
+        }
+
         self.createTextures = function() {
             // Free the previous set (resizes and exports call this again).
-            [tRandRotColor, tRandRotDepth, fbRandRot, tSceneColor, tSceneNormal, tSceneDepth, fbSceneColor, fbSceneNormal, tAccumulator, tAccumulatorOut, fbAccumulator, tAO, fbAO, tFXAA, tFXAAOut, fbFXAA, tDOF, fbDOF, tSurfColor, tSurfNormal, tSurfDepth, fbSurfColor, fbSurfNormal, tSurfAcc, tSurfAccOut, fbSurfAccumulator, tRandRotDepthAll, fbRandRotAll, tShadowMapColor, tShadowMap, fbShadowMap, tShadow, fbShadow, tPickColor, tPickDepth, fbPick].forEach(function(o) { if (o) o.destroy(); });
-            // fbRandRot
-            tRandRotColor = new webgl.Texture(gl, 0, null, aoResolution, aoResolution);
-
-            tRandRotDepth = new webgl.Texture(gl, 1, null, aoResolution, aoResolution, {
-                internalFormat: gl.DEPTH_COMPONENT,
-                format: gl.DEPTH_COMPONENT,
-                type: gl.UNSIGNED_SHORT
-            });
-
-            fbRandRot = new webgl.Framebuffer(gl, [tRandRotColor], tRandRotDepth);
-
-            // fbScene
-            tSceneColor = new webgl.Texture(gl, 2, null, m_resolution, m_resolution);
-
-            tSceneNormal = new webgl.Texture(gl, 3, null, m_resolution, m_resolution);
-
-            tSceneDepth = new webgl.Texture(gl, 4, null, m_resolution, m_resolution, {
-                internalFormat: gl.DEPTH_COMPONENT,
-                format: gl.DEPTH_COMPONENT,
-                type: gl.UNSIGNED_SHORT
-            });
-
-            fbSceneColor = new webgl.Framebuffer(gl, [tSceneColor], tSceneDepth);
-
-            fbSceneNormal = new webgl.Framebuffer(gl, [tSceneNormal], tSceneDepth);
-
-            // fbAccumulator
-            tAccumulator = new webgl.Texture(gl, 5, null, m_resolution, m_resolution);
-            tAccumulatorOut = new webgl.Texture(gl, 6, null, m_resolution, m_resolution);
-            fbAccumulator = new webgl.Framebuffer(gl, [tAccumulatorOut]);
-
-            // fbAO
-            tAO = new webgl.Texture(gl, 7, null, m_resolution, m_resolution);
-            fbAO = new webgl.Framebuffer(gl, [tAO]);
-
-            // fbFXAA
-            tFXAA = new webgl.Texture(gl, 8, null, m_resolution, m_resolution);
-            tFXAAOut = new webgl.Texture(gl, 9, null, m_resolution, m_resolution);
-            fbFXAA = new webgl.Framebuffer(gl, [tFXAAOut]);
-
-            // fbDOF
-            tDOF = new webgl.Texture(gl, 10, null, m_resolution, m_resolution);
-            fbDOF = new webgl.Framebuffer(gl, [tDOF]);
-
-            // Translucent surface layer
-            var depthOptions = {
+            [tRandRotColor, tRandRotDepth, fbRandRot, tSceneColor, tSceneNormal, tSceneDepth, fbSceneColor, fbSceneNormal, tAO, fbAO, tFXAA, tFXAAOut, fbFXAA, fbFXAA2, tDOF, fbDOF, tPickColor, tPickDepth, fbPick, tDummy].forEach(function(o) { if (o) o.destroy(); });
+            if (acc) release([acc.read.t, acc.read.fb, acc.write.t, acc.write.fb]);
+            releaseSurfaceLayer();
+            releaseShadowLayer();
+            depthOptions = {
                 internalFormat: gl.DEPTH_COMPONENT,
                 format: gl.DEPTH_COMPONENT,
                 type: gl.UNSIGNED_SHORT
             };
-            tSurfColor = new webgl.Texture(gl, 11, null, m_resolution, m_resolution);
-            tSurfNormal = new webgl.Texture(gl, 11, null, m_resolution, m_resolution);
-            tSurfDepth = new webgl.Texture(gl, 11, null, m_resolution, m_resolution, depthOptions);
-            fbSurfColor = new webgl.Framebuffer(gl, [tSurfColor], tSurfDepth);
-            fbSurfNormal = new webgl.Framebuffer(gl, [tSurfNormal], tSurfDepth);
-            tSurfAcc = new webgl.Texture(gl, 11, null, m_resolution, m_resolution);
-            tSurfAccOut = new webgl.Texture(gl, 11, null, m_resolution, m_resolution);
-            fbSurfAccumulator = new webgl.Framebuffer(gl, [tSurfAccOut]);
-            // Occluders for the surface's own AO include the surface itself.
-            tRandRotDepthAll = new webgl.Texture(gl, 11, null, aoResolution, aoResolution, depthOptions);
-            fbRandRotAll = new webgl.Framebuffer(gl, [tRandRotColor], tRandRotDepthAll);
+            // fbRandRot: depth seen along an AO direction (the color is not used).
+            tRandRotColor = new webgl.Texture(gl, 0, null, aoResolution, aoResolution);
+            tRandRotDepth = new webgl.Texture(gl, 1, null, aoResolution, aoResolution, depthOptions);
+            fbRandRot = new webgl.Framebuffer(gl, [tRandRotColor], tRandRotDepth);
 
-            // Shadows
-            tShadowMapColor = new webgl.Texture(gl, 11, null, SHADOW_RES, SHADOW_RES);
-            tShadowMap = new webgl.Texture(gl, 11, null, SHADOW_RES, SHADOW_RES, depthOptions);
-            fbShadowMap = new webgl.Framebuffer(gl, [tShadowMapColor], tShadowMap);
-            tShadow = new webgl.Texture(gl, 11, null, m_resolution, m_resolution);
-            fbShadow = new webgl.Framebuffer(gl, [tShadow]);
+            // fbScene
+            tSceneColor = new webgl.Texture(gl, 2, null, rx, ry);
+            tSceneNormal = new webgl.Texture(gl, 3, null, rx, ry);
+            tSceneDepth = new webgl.Texture(gl, 4, null, rx, ry, depthOptions);
+            fbSceneColor = new webgl.Framebuffer(gl, [tSceneColor], tSceneDepth);
+            fbSceneNormal = new webgl.Framebuffer(gl, [tSceneNormal], tSceneDepth);
+
+            // Accumulators (units 5 and 6)
+            acc = {read: target(5), write: target(6)};
+
+            // fbAO
+            tAO = new webgl.Texture(gl, 7, null, rx, ry);
+            fbAO = new webgl.Framebuffer(gl, [tAO]);
+
+            // FXAA passes alternate between two targets.
+            tFXAA = new webgl.Texture(gl, 8, null, rx, ry);
+            tFXAAOut = new webgl.Texture(gl, 9, null, rx, ry);
+            fbFXAA = new webgl.Framebuffer(gl, [tFXAAOut]);
+            fbFXAA2 = new webgl.Framebuffer(gl, [tFXAA]);
+
+            // fbDOF
+            tDOF = new webgl.Texture(gl, 10, null, rx, ry);
+            fbDOF = new webgl.Framebuffer(gl, [tDOF]);
 
             // Picking
             tPickColor = new webgl.Texture(gl, 11, null, 1, 1);
             tPickDepth = new webgl.Texture(gl, 11, null, 1, 1, depthOptions);
             fbPick = new webgl.Framebuffer(gl, [tPickColor], tPickDepth);
+
+            tDummy = new webgl.Texture(gl, 11, new Uint8Array(4), 1, 1);
+            clearAccumulators();
+        }
+
+        // Translucent surface layer (units 11 - 14 when drawn), made when first needed.
+        function ensureSurfaceLayer() {
+            if (tSurfColor) return;
+            tSurfColor = new webgl.Texture(gl, 11, null, rx, ry);
+            tSurfNormal = new webgl.Texture(gl, 11, null, rx, ry);
+            tSurfDepth = new webgl.Texture(gl, 11, null, rx, ry, depthOptions);
+            fbSurfColor = new webgl.Framebuffer(gl, [tSurfColor], tSurfDepth);
+            fbSurfNormal = new webgl.Framebuffer(gl, [tSurfNormal], tSurfDepth);
+            surfAcc = {read: target(11), write: target(11)};
+            // Occluders for the surface's own AO include the surface itself.
+            tRandRotDepthAll = new webgl.Texture(gl, 11, null, aoResolution, aoResolution, depthOptions);
+            fbRandRotAll = new webgl.Framebuffer(gl, [tRandRotColor], tRandRotDepthAll);
+            clearAccumulators();
+        }
+
+        // Key-light shadows, made when first needed.
+        function ensureShadowLayer() {
+            if (tShadowMapColor) return;
+            tShadowMapColor = new webgl.Texture(gl, 11, null, SHADOW_RES, SHADOW_RES);
+            tShadowMap = new webgl.Texture(gl, 11, null, SHADOW_RES, SHADOW_RES, depthOptions);
+            fbShadowMap = new webgl.Framebuffer(gl, [tShadowMapColor], tShadowMap);
+            tShadow = new webgl.Texture(gl, 11, null, rx, ry);
+            fbShadow = new webgl.Framebuffer(gl, [tShadow]);
+        }
+
+        function clearAccumulators() {
+            [acc, surfAcc].forEach(function(pair) {
+                if (!pair) return;
+                [pair.read, pair.write].forEach(function(x) {
+                    x.fb.bind();
+                    gl.clear(gl.COLOR_BUFFER_BIT);
+                });
+            });
+        }
+
+        // The part of the view's square frame that the canvas shows.
+        function visibleRect(rect) {
+            var w = rect.right - rect.left, h = rect.top - rect.bottom;
+            return {left: rect.left, bottom: rect.bottom,
+                    right: rect.left + w * rx / m_resolution, top: rect.bottom + h * ry / m_resolution};
+        }
+
+        // Texture coordinates per frame unit (see the ao shader's uFrame).
+        function frameScale() {
+            return [m_resolution / rx, m_resolution / ry];
         }
 
         function bindUnit(texture, unit) {
@@ -267,17 +323,22 @@ module.exports = function (canvas, resolution, aoResolution) {
         }
 
         function transparentSurface(view) {
-            return view.surface && rSurface != null && view.surfaceOpacity < 1;
+            var on = view.surface && rSurface != null && view.surfaceOpacity < 1;
+            if (on) ensureSurfaceLayer();
+            return on;
         }
 
         self.setResolution = function(res, aoRes) {
             aoResolution = aoRes;
             resolution = res;
             m_resolution = Math.max(resolution.x, resolution.y);
+            rx = resolution.x;
+            ry = resolution.y;
             canvas.width = resolution.x;
             canvas.height = resolution.y;
-            gl.viewport(0,0,m_resolution,m_resolution);
+            gl.viewport(0, 0, rx, ry);
             self.createTextures();
+            idleDisplayed = false;
         }
 
 
@@ -394,19 +455,61 @@ module.exports = function (canvas, resolution, aoResolution) {
 
         }
 
+        // A triangle mesh {position, normal, color (floats, 3 per vertex),
+        // index (optional, 3 per triangle), count (indices, or vertices)}.
+        // Normals and colors go to the GPU as 4 bytes each (not 12), and
+        // shared vertices are stored once when the mesh is indexed.
         function meshRenderable(mesh) {
             if (mesh.count === 0) {
                 return null;
             }
-            var attribs = webgl.buildAttribs(gl, {
-                aPosition: 3, aNormal: 3, aColor: 3
-            });
+            var index = mesh.index;
+            if (index && !elementIndexUint && mesh.position.length / 3 > 65536) {
+                mesh = unindex(mesh);
+                index = null;
+            }
+            var n = mesh.position.length / 3;
+            var normal = new Int8Array(4 * n), color = new Uint8Array(4 * n);
+            for (var i = 0; i < n; i++) {
+                for (var c = 0; c < 3; c++) {
+                    normal[4 * i + c] = Math.round(Math.max(-1, Math.min(1, mesh.normal[3 * i + c])) * 127);
+                    color[4 * i + c] = Math.round(Math.max(0, Math.min(1, mesh.color[3 * i + c])) * 255);
+                }
+            }
+            var attribs = {
+                aPosition: {buffer: new webgl.GLBuffer(gl), size: 3},
+                aNormal: {buffer: new webgl.GLBuffer(gl), size: 4, type: gl.BYTE, normalized: true},
+                aColor: {buffer: new webgl.GLBuffer(gl), size: 4, type: gl.UNSIGNED_BYTE, normalized: true}
+            };
             attribs.aPosition.buffer.set(mesh.position);
-            attribs.aNormal.buffer.set(mesh.normal);
-            attribs.aColor.buffer.set(mesh.color);
-            var r = new webgl.Renderable(gl, progCartoon, attribs, mesh.count / 3);
+            attribs.aNormal.buffer.set(normal);
+            attribs.aColor.buffer.set(color);
+            var r;
+            if (index) {
+                var small = n <= 65536;
+                var buffer = new webgl.GLBuffer(gl, gl.ELEMENT_ARRAY_BUFFER);
+                buffer.set(small ? new Uint16Array(index) : (index instanceof Uint32Array ? index : new Uint32Array(index)));
+                r = new webgl.Renderable(gl, progCartoon, attribs, index.length / 3,
+                    {buffer: buffer, count: index.length, type: small ? gl.UNSIGNED_SHORT : gl.UNSIGNED_INT});
+            } else {
+                r = new webgl.Renderable(gl, progCartoon, attribs, mesh.count / 3);
+            }
             r.vertices = mesh.count;
             return r;
+        }
+
+        // An indexed mesh as plain triangles (browsers without 32-bit indices).
+        function unindex(mesh) {
+            var idx = mesh.index, m = idx.length;
+            var out = {position: new Float32Array(3 * m), normal: new Float32Array(3 * m), color: new Float32Array(3 * m), count: m};
+            for (var i = 0; i < m; i++) {
+                for (var c = 0; c < 3; c++) {
+                    out.position[3 * i + c] = mesh.position[3 * idx[i] + c];
+                    out.normal[3 * i + c] = mesh.normal[3 * idx[i] + c];
+                    out.color[3 * i + c] = mesh.color[3 * idx[i] + c];
+                }
+            }
+            return out;
         }
 
         function drawMesh(renderable, shade, projection, viewMat, model, mode) {
@@ -442,18 +545,28 @@ module.exports = function (canvas, resolution, aoResolution) {
             colorRendered = false;
             normalRendered = false;
             shadowRendered = false;
-            tAccumulator.reset();
-            tAccumulatorOut.reset();
-            tSurfAcc.reset();
-            tSurfAccOut.reset();
+            idleDisplayed = false;
+            clearAccumulators();
         }
 
-        self.render = function(view) {
+        // Whether every pass for the view is done (nothing left to refine).
+        function converged(view) {
+            return colorRendered && normalRendered && (shadowRendered || !(view.shadows > 0)) &&
+                (view.ao <= 0 || sampleCount >= maxSamples(view));
+        }
+
+        // One step of progressive rendering, then the picture. Once the view has
+        // converged and is on screen, nothing is drawn until reset() (the canvas
+        // keeps its picture), unless `force`. Returns whether it drew.
+        self.render = function(view, force) {
             if (system === undefined) {
-                return;
+                return false;
             }
             if (rAtoms == null) {
-                return;
+                return false;
+            }
+            if (idleDisplayed && !force && lastView === view && converged(view)) {
+                return false;
             }
 
             range = System.getRadius(system) * 2.0;
@@ -477,6 +590,8 @@ module.exports = function (canvas, resolution, aoResolution) {
                 }
             }
             display(view);
+            idleDisplayed = converged(view);
+            return true;
         }
 
         // One complete frame for a moving view (auto-rotate): color, normals,
@@ -504,6 +619,7 @@ module.exports = function (canvas, resolution, aoResolution) {
                 sampleCount++;
             }
             display(view);
+            idleDisplayed = false;
         }
 
         // Video frames: like renderMoving, with the sample directions fixed to
@@ -531,6 +647,7 @@ module.exports = function (canvas, resolution, aoResolution) {
                 sampleCount++;
             }
             display(view);
+            idleDisplayed = false;
             return sampleCount >= goal;
         }
 
@@ -565,7 +682,7 @@ module.exports = function (canvas, resolution, aoResolution) {
             progAtoms.setUniform("uTopRight", "2fv", [rect.right, rect.top]);
             progAtoms.setUniform("uAtomScale", "1f", 2.5 * view.atomScale);
             progAtoms.setUniform("uRelativeAtomScale", "1f", view.relativeAtomScale);
-            progAtoms.setUniform("uRes", "1f", res);
+            progAtoms.setUniform("uRes", "2fv", res);
             progAtoms.setUniform("uDepth", "1f", range);
             progAtoms.setUniform("uMode", "1i", mode);
             progAtoms.setUniform("uAtomShade", "1f", view.atomShade);
@@ -579,7 +696,7 @@ module.exports = function (canvas, resolution, aoResolution) {
                 progBonds.setUniform("uDepth", "1f", range);
                 progBonds.setUniform("uBottomLeft", "2fv", [rect.left, rect.bottom]);
                 progBonds.setUniform("uTopRight", "2fv", [rect.right, rect.top]);
-                progBonds.setUniform("uRes", "1f", res);
+                progBonds.setUniform("uRes", "2fv", res);
                 progBonds.setUniform("uBondRadius", "1f", 2.5 * View.getBondRadius(view));
                 progBonds.setUniform("uBondShade", "1f", view.bondShade);
                 progBonds.setUniform("uAtomScale", "1f", 2.5 * view.atomScale);
@@ -596,10 +713,10 @@ module.exports = function (canvas, resolution, aoResolution) {
             colorRendered = true;
             fogExtent = depthExtent(view);
             dofDepth = focusDepth(view);
-            gl.viewport(0, 0, m_resolution, m_resolution);
+            gl.viewport(0, 0, rx, ry);
             fbSceneColor.bind();
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-            var pass = drawScene(view, View.getRect(view), m_resolution, 0, "opaque");
+            var pass = drawScene(view, visibleRect(View.getRect(view)), [rx, ry], 0, "opaque");
             if (transparentSurface(view)) {
                 fbSurfColor.bind();
                 gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -609,10 +726,10 @@ module.exports = function (canvas, resolution, aoResolution) {
 
         function normal(view) {
             normalRendered = true;
-            gl.viewport(0, 0, m_resolution, m_resolution);
+            gl.viewport(0, 0, rx, ry);
             fbSceneNormal.bind();
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-            var pass = drawScene(view, View.getRect(view), m_resolution, 1, "opaque");
+            var pass = drawScene(view, visibleRect(View.getRect(view)), [rx, ry], 1, "opaque");
             if (transparentSurface(view)) {
                 fbSurfNormal.bind();
                 gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -638,7 +755,7 @@ module.exports = function (canvas, resolution, aoResolution) {
             fbPick.bind();
             gl.viewport(0, 0, 1, 1);
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-            drawScene(view, {left: x - half, right: x + half, bottom: y - half, top: y + half}, 1, 2, "opaque");
+            drawScene(view, {left: x - half, right: x + half, bottom: y - half, top: y + half}, [1, 1], 2, "opaque");
             var px = new Uint8Array(4);
             gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
             gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -653,12 +770,12 @@ module.exports = function (canvas, resolution, aoResolution) {
         // framebuffer. Used for the AO samples and the key-light shadow map.
         function renderRotated(view, rot, res, layer) {
             gl.viewport(0, 0, res, res);
-            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-            var v = View.clone(view);
-            v.zoom = 1/range;
-            v.translation.x = 0;
-            v.translation.y = 0;
-            v.rotation = glm.mat4.multiply(glm.mat4.create(), rot, v.rotation);
+            // Only depth is used: no color writes.
+            gl.colorMask(false, false, false, false);
+            gl.clear(gl.DEPTH_BUFFER_BIT);
+            // The camera of this pass (not a copy of the whole view).
+            var v = {zoom: 1 / range, aspect: view.aspect, translation: {x: 0, y: 0}, atomScale: view.atomScale,
+                     rotation: glm.mat4.multiply(glm.mat4.create(), rot, view.rotation)};
             var rect = View.getRect(v);
             var projection = glm.mat4.create();
             glm.mat4.ortho(projection, rect.left, rect.right, rect.bottom, rect.top, 0, range);
@@ -675,9 +792,9 @@ module.exports = function (canvas, resolution, aoResolution) {
             progAtoms.setUniform("uTopRight", "2fv", [rect.right, rect.top]);
             progAtoms.setUniform("uAtomScale", "1f", 2.5 * v.atomScale);
             progAtoms.setUniform("uRelativeAtomScale", "1f", view.relativeAtomScale);
-            progAtoms.setUniform("uRes", "1f", res);
+            progAtoms.setUniform("uRes", "2fv", [res, res]);
             progAtoms.setUniform("uDepth", "1f", range);
-            progAtoms.setUniform("uMode", "1i", 0);
+            progAtoms.setUniform("uMode", "1i", 3);
             progAtoms.setUniform("uAtomShade", "1f", view.atomShade);
             rAtoms.render();
 
@@ -689,16 +806,17 @@ module.exports = function (canvas, resolution, aoResolution) {
                 progBonds.setUniform("uDepth", "1f", range);
                 progBonds.setUniform("uBottomLeft", "2fv", [rect.left, rect.bottom]);
                 progBonds.setUniform("uTopRight", "2fv", [rect.right, rect.top]);
-                progBonds.setUniform("uRes", "1f", res);
+                progBonds.setUniform("uRes", "2fv", [res, res]);
                 progBonds.setUniform("uBondRadius", "1f", 2.5 * View.getBondRadius(view));
                 progBonds.setUniform("uBondShade", "1f", view.bondShade);
                 progBonds.setUniform("uAtomScale", "1f", 2.5 * view.atomScale);
                 progBonds.setUniform("uRelativeAtomScale", "1f", view.relativeAtomScale);
-                progBonds.setUniform("uMode", "1i", 0);
+                progBonds.setUniform("uMode", "1i", 3);
                 rBonds.render();
             }
 
-            drawCartoon(view, projection, viewMat, model, 0, layer);
+            drawCartoon(view, projection, viewMat, model, 3, layer);
+            gl.colorMask(true, true, true, true);
             return {v: v, projection: projection, viewMat: viewMat, model: model};
         }
 
@@ -708,37 +826,36 @@ module.exports = function (canvas, resolution, aoResolution) {
             var pass = renderRotated(view, rot, aoResolution, "opaque");
             var v = pass.v, projection = pass.projection, viewMat = pass.viewMat, model = pass.model;
 
-            var sceneRect = View.getRect(view);
+            var sceneRect = visibleRect(View.getRect(view));
             var rotRect = View.getRect(v);
             var invRot = glm.mat4.invert(glm.mat4.create(), rot);
 
-            gl.viewport(0, 0, m_resolution, m_resolution);
-            fbAccumulator.bind();
-            accumulate(tSceneDepth.index, tSceneNormal.index, tRandRotDepth.index, tAccumulator.index,
+            gl.viewport(0, 0, rx, ry);
+            acc.write.fb.bind();
+            accumulate(tSceneDepth.index, tSceneNormal.index, tRandRotDepth.index, bindUnit(acc.read.t, 5),
                        sceneRect, rotRect, rot, invRot);
-            tAccumulator.activate();
-            tAccumulator.bind();
-            gl.copyTexImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 0, 0, m_resolution, m_resolution, 0);
+            var swap = acc.read; acc.read = acc.write; acc.write = swap;
 
             if (transparentSurface(view)) {
                 // Same random direction, with the surface added as an occluder.
                 // Atom and bond uniforms are still set from the pass above.
                 gl.viewport(0, 0, aoResolution, aoResolution);
                 fbRandRotAll.bind();
-                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+                gl.colorMask(false, false, false, false);
+                gl.clear(gl.DEPTH_BUFFER_BIT);
                 rAtoms.render();
                 if (view.bonds && rBonds != null) {
                     rBonds.render();
                 }
-                drawCartoon(view, projection, viewMat, model, 0, "all");
+                drawCartoon(view, projection, viewMat, model, 3, "all");
+                gl.colorMask(true, true, true, true);
 
-                gl.viewport(0, 0, m_resolution, m_resolution);
-                fbSurfAccumulator.bind();
+                gl.viewport(0, 0, rx, ry);
+                surfAcc.write.fb.bind();
                 accumulate(bindUnit(tSurfDepth, 11), bindUnit(tSurfNormal, 12),
-                           bindUnit(tRandRotDepthAll, 13), bindUnit(tSurfAcc, 14),
+                           bindUnit(tRandRotDepthAll, 13), bindUnit(surfAcc.read.t, 14),
                            sceneRect, rotRect, rot, invRot);
-                bindUnit(tSurfAcc, 14);
-                gl.copyTexImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 0, 0, m_resolution, m_resolution, 0);
+                var s2 = surfAcc.read; surfAcc.read = surfAcc.write; surfAcc.write = s2;
             }
         }
 
@@ -763,11 +880,12 @@ module.exports = function (canvas, resolution, aoResolution) {
         function shadow(view) {
             var rot = glm.mat4.fromQuat(glm.mat4.create(),
                 glm.quat.rotationTo(glm.quat.create(), LIGHT_DIR, glm.vec3.fromValues(0, 0, 1)));
+            ensureShadowLayer();
             fbShadowMap.bind();
             var pass = renderRotated(view, rot, SHADOW_RES, "opaque");
-            var sceneRect = View.getRect(view);
+            var sceneRect = visibleRect(View.getRect(view));
             var rotRect = View.getRect(pass.v);
-            gl.viewport(0, 0, m_resolution, m_resolution);
+            gl.viewport(0, 0, rx, ry);
             fbShadow.bind();
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
             progShadow.setUniform("uSceneDepth", "1i", tSceneDepth.index);
@@ -777,7 +895,7 @@ module.exports = function (canvas, resolution, aoResolution) {
             progShadow.setUniform("uSceneTopRight", "2fv", [sceneRect.right, sceneRect.top]);
             progShadow.setUniform("uRotBottomLeft", "2fv", [rotRect.left, rotRect.bottom]);
             progShadow.setUniform("uRotTopRight", "2fv", [rotRect.right, rotRect.top]);
-            progShadow.setUniform("uRes", "1f", m_resolution);
+            progShadow.setUniform("uRes", "2fv", [rx, ry]);
             progShadow.setUniform("uDepth", "1f", range);
             progShadow.setUniform("uShadowRes", "1f", SHADOW_RES);
             progShadow.setUniform("uSoftness", "1f", view.shadowSoftness);
@@ -900,7 +1018,6 @@ module.exports = function (canvas, resolution, aoResolution) {
         }
 
         function accumulate(depthUnit, normalUnit, rotDepthUnit, accUnit, sceneRect, rotRect, rot, invRot) {
-            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
             progAccumulator.setUniform("uSceneDepth", "1i", depthUnit);
             progAccumulator.setUniform("uSceneNormal", "1i", normalUnit);
             progAccumulator.setUniform("uRandRotDepth", "1i", rotDepthUnit);
@@ -909,7 +1026,7 @@ module.exports = function (canvas, resolution, aoResolution) {
             progAccumulator.setUniform("uSceneTopRight", "2fv", [sceneRect.right, sceneRect.top]);
             progAccumulator.setUniform("uRotBottomLeft", "2fv", [rotRect.left, rotRect.bottom]);
             progAccumulator.setUniform("uRotTopRight", "2fv", [rotRect.right, rotRect.top]);
-            progAccumulator.setUniform("uRes", "1f", m_resolution);
+            progAccumulator.setUniform("uRes", "2fv", [rx, ry]);
             progAccumulator.setUniform("uDepth", "1f", range);
             progAccumulator.setUniform("uAORes", "1f", aoResolution);
             progAccumulator.setUniform("uRot", "Matrix4fv", false, rot);
@@ -919,17 +1036,18 @@ module.exports = function (canvas, resolution, aoResolution) {
         }
 
         function display(view) {
-            gl.viewport(0, 0, m_resolution, m_resolution);
+            gl.viewport(0, 0, rx, ry);
             if (view.fxaa > 0 || view.dofStrength > 0) {
                 fbAO.bind();
             } else {
                 gl.bindFramebuffer(gl.FRAMEBUFFER, null);
             }
-            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+            gl.clear(gl.COLOR_BUFFER_BIT);
             progAO.setUniform("uSceneColor", "1i", tSceneColor.index);
             progAO.setUniform("uSceneDepth", "1i", tSceneDepth.index);
-            progAO.setUniform("uAccumulatorOut", "1i", tAccumulatorOut.index);
-            progAO.setUniform("uRes", "1f", m_resolution);
+            progAO.setUniform("uAccumulatorOut", "1i", bindUnit(acc.read.t, 5));
+            progAO.setUniform("uRes", "2fv", [rx, ry]);
+            progAO.setUniform("uFrame", "2fv", frameScale());
             // The shader scale assumes 1024 samples; normalize by the samples taken
             // so far, so AO shows at full strength at once and then refines.
             progAO.setUniform("uAO", "1f", 2.0 * view.ao * 1024 / Math.max(1, Math.min(sampleCount, maxSamples(view))));
@@ -942,12 +1060,14 @@ module.exports = function (canvas, resolution, aoResolution) {
             progAO.setUniform("uMetallic", "1f", view.metallic);
             progAO.setUniform("uMetalAll", "1f", view.metallicAtoms === "metals" ? 0 : 1);
             progAO.setUniform("uLightDir", "3fv", LIGHT_DIR);
-            progAO.setUniform("uSurfaceColor", "1i", bindUnit(tSurfColor, 11));
-            progAO.setUniform("uSurfaceDepth", "1i", bindUnit(tSurfDepth, 12));
-            progAO.setUniform("uSurfaceNormal", "1i", bindUnit(tSurfNormal, 13));
-            progAO.setUniform("uSurfaceAccumulator", "1i", bindUnit(tSurfAccOut, 14));
-            progAO.setUniform("uSurfaceOpacity", "1f", transparentSurface(view) ? view.surfaceOpacity : 1.0);
-            progAO.setUniform("uShadow", "1i", bindUnit(tShadow, 15));
+            // Layers that are not allocated are stood in for by a 1 x 1 texture.
+            var surf = transparentSurface(view);
+            progAO.setUniform("uSurfaceColor", "1i", bindUnit(surf ? tSurfColor : tDummy, 11));
+            progAO.setUniform("uSurfaceDepth", "1i", bindUnit(surf ? tSurfDepth : tDummy, 12));
+            progAO.setUniform("uSurfaceNormal", "1i", bindUnit(surf ? tSurfNormal : tDummy, 13));
+            progAO.setUniform("uSurfaceAccumulator", "1i", bindUnit(surf ? surfAcc.read.t : tDummy, 14));
+            progAO.setUniform("uSurfaceOpacity", "1f", surf ? view.surfaceOpacity : 1.0);
+            progAO.setUniform("uShadow", "1i", bindUnit(tShadowMapColor && shadowRendered ? tShadow : tDummy, 15));
             progAO.setUniform("uShadows", "1f", shadowRendered ? view.shadows : 0.0);
             progAO.setUniform("uRim", "1f", view.rim);
             progAO.setUniform("uFog", "1f", view.fog);
@@ -976,41 +1096,34 @@ module.exports = function (canvas, resolution, aoResolution) {
             progAO.setUniform("uFloorWidth", "1f", fl ? fl.width : 1.0);
             rAO.render();
 
+            // FXAA passes alternate between two targets; the last one goes to
+            // the canvas unless depth of field follows.
+            var last = tAO;
             if (view.fxaa > 0) {
-                if (view.dofStrength > 0) {
-                    fbFXAA.bind();
-                } else {
-                    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-                }
+                var outs = [{fb: fbFXAA, t: tFXAAOut}, {fb: fbFXAA2, t: tFXAA}];
                 for (var i = 0; i < view.fxaa; i++) {
-                    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-                    if (i == 0) {
-                        progFXAA.setUniform("uTexture", "1i", tAO.index);
-                    } else {
-                        progFXAA.setUniform("uTexture", "1i", tFXAA.index);
-                    }
-                    progFXAA.setUniform("uRes", "1f", m_resolution);
+                    var toCanvas = i === view.fxaa - 1 && !(view.dofStrength > 0);
+                    if (toCanvas) gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+                    else outs[i % 2].fb.bind();
+                    gl.clear(gl.COLOR_BUFFER_BIT);
+                    progFXAA.setUniform("uTexture", "1i", bindUnit(last, 8));
+                    progFXAA.setUniform("uRes", "2fv", [rx, ry]);
                     rFXAA.render();
-                    tFXAA.activate();
-                    tFXAA.bind();
-                    gl.copyTexImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 0, 0, m_resolution, m_resolution, 0);
+                    if (!toCanvas) last = outs[i % 2].t;
                 }
             }
 
             if (view.dofStrength > 0) {
                 gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-                if (view.fxaa > 0) {
-                    progDOF.setUniform("uColor", "1i", tFXAA.index);
-                } else {
-                    progDOF.setUniform("uColor", "1i", tAO.index);
-                }
+                gl.clear(gl.COLOR_BUFFER_BIT);
+                progDOF.setUniform("uColor", "1i", bindUnit(last, 8));
                 progDOF.setUniform("uDepth", "1i", tSceneDepth.index);
                 progDOF.setUniform("uDOFPosition", "1f", dofDepth);
                 progDOF.setUniform("uRange", "1f", range);
                 progDOF.setUniform("uZoom", "1f", view.zoom);
                 progDOF.setUniform("uDOFStrength", "1f", view.dofStrength);
-                progDOF.setUniform("uRes", "1f", m_resolution);
+                progDOF.setUniform("uRes", "2fv", [rx, ry]);
+                progDOF.setUniform("uFrame", "2fv", frameScale());
                 rDOF.render();
             }
 

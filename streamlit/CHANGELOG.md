@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Changed
+- Faster, lighter rendering: a viewer uses about 60 - 70 % less GPU memory (render targets sized to the
+  canvas instead of a square, no multisampled canvas, surface and shadow layers only when used, compact
+  indexed meshes); it stops drawing once the picture is complete and while scrolled out of sight (no GPU
+  work when idle); ambient occlusion converges up to 3x faster; the viewer redraws itself after the
+  browser resets the GPU
+
 ### Added
 - Ready-made videos by name (`spin`, `rock`, `orbit`, `tour`, `focus`, `reveal`, `trajectory`, `showcase`):
   they find the structure's ligand or trajectory and turn a ligand toward the viewer; `seconds`, `target`,

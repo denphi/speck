@@ -712,28 +712,54 @@ module.exports.buildMesh = function(s, view) {
     var samples = quality;
     var M = 2 * quality;
 
-    // Growable typed arrays (plain arrays of millions of numbers take far more memory).
+    // Growable typed arrays (plain arrays of millions of numbers take far more
+    // memory). Vertices are stored once and triangles index them: a ring's
+    // vertices are shared by the tube sections on both sides.
     var size = 1 << 16, used = 0;
     var position = new Float32Array(size), normal = new Float32Array(size), color = new Float32Array(size);
+    var isize = 1 << 16, iused = 0;
+    var index = new Uint32Array(isize);
     function grow() {
         size *= 2;
         var p = new Float32Array(size), n = new Float32Array(size), k = new Float32Array(size);
         p.set(position); n.set(normal); k.set(color);
         position = p; normal = n; color = k;
     }
+    // Adds a vertex and returns its index.
     function vertex(p, n, c) {
         if (used + 3 > size) grow();
         position[used] = p[0]; position[used + 1] = p[1]; position[used + 2] = p[2];
         normal[used] = n[0]; normal[used + 1] = n[1]; normal[used + 2] = n[2];
         color[used] = c[0]; color[used + 1] = c[1]; color[used + 2] = c[2];
         used += 3;
+        return used / 3 - 1;
+    }
+    function tri(a, b, c) {
+        if (iused + 3 > isize) {
+            isize *= 2;
+            var grown = new Uint32Array(isize);
+            grown.set(index);
+            index = grown;
+        }
+        index[iused] = a; index[iused + 1] = b; index[iused + 2] = c;
+        iused += 3;
+    }
+    // The ring's vertices with the ring's normals and color.
+    function ringIndices(verts, c) {
+        var out = new Array(M);
+        for (var q = 0; q < M; q++) out[q] = vertex(verts[q].p, verts[q].n, c);
+        return out;
+    }
+    // Flat vertices (a cap or a step face) with normal n.
+    function flatIndices(verts, n, c) {
+        var out = new Array(M);
+        for (var q = 0; q < M; q++) out[q] = vertex(verts[q].p, n, c);
+        return out;
     }
     function cap(ring, verts, n) {
-        for (var q = 0; q < M; q++) {
-            vertex(ring.p, n, ring.color);
-            vertex(verts[q].p, n, ring.color);
-            vertex(verts[(q + 1) % M].p, n, ring.color);
-        }
+        var center = vertex(ring.p, n, ring.color);
+        var edge = flatIndices(verts, n, ring.color);
+        for (var q = 0; q < M; q++) tri(center, edge[q], edge[(q + 1) % M]);
     }
 
     for (var si = 0; si < residues.segments.length; si++) {
@@ -742,36 +768,35 @@ module.exports.buildMesh = function(s, view) {
             continue;
         }
         var rings = segmentRings(seg, view, samples);
-        var prev = null, prevRing = null;
+        var prev = null, prevRing = null, prevIdx = null;
         for (var k = 0; k < rings.length; k++) {
             var ring = rings[k];
             var verts = ringVertices(ring, M);
+            var idx = null;
             if (prev === null) {
                 cap(ring, verts, scale(ring.T, -1));
             } else if (ring.step) {
+                // A flat face between the two rings (e.g. an arrowhead's back).
                 var n = scale(ring.T, -1);
+                var a = flatIndices(prev, n, ring.color), b = flatIndices(verts, n, ring.color);
                 for (var q = 0; q < M; q++) {
                     var q1 = (q + 1) % M;
-                    vertex(prev[q].p, n, ring.color);
-                    vertex(prev[q1].p, n, ring.color);
-                    vertex(verts[q1].p, n, ring.color);
-                    vertex(prev[q].p, n, ring.color);
-                    vertex(verts[q1].p, n, ring.color);
-                    vertex(verts[q].p, n, ring.color);
+                    tri(a[q], a[q1], b[q1]);
+                    tri(a[q], b[q1], b[q]);
                 }
             } else {
-                for (var q = 0; q < M; q++) {
-                    var q1 = (q + 1) % M;
-                    vertex(prev[q].p, prev[q].n, prevRing.color);
-                    vertex(prev[q1].p, prev[q1].n, prevRing.color);
-                    vertex(verts[q1].p, verts[q1].n, ring.color);
-                    vertex(prev[q].p, prev[q].n, prevRing.color);
-                    vertex(verts[q1].p, verts[q1].n, ring.color);
-                    vertex(verts[q].p, verts[q].n, ring.color);
+                // Smooth tube: the previous ring's own vertices are reused.
+                var pa = prevIdx || ringIndices(prev, prevRing.color);
+                idx = ringIndices(verts, ring.color);
+                for (var q2 = 0; q2 < M; q2++) {
+                    var q3 = (q2 + 1) % M;
+                    tri(pa[q2], pa[q3], idx[q3]);
+                    tri(pa[q2], idx[q3], idx[q2]);
                 }
             }
             prev = verts;
             prevRing = ring;
+            prevIdx = idx;
         }
         cap(prevRing, prev, prevRing.T);
     }
@@ -780,6 +805,7 @@ module.exports.buildMesh = function(s, view) {
         position: position.subarray(0, used),
         normal: normal.subarray(0, used),
         color: color.subarray(0, used),
-        count: used / 3
+        index: index.subarray(0, iused),
+        count: iused
     };
 };

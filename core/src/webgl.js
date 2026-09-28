@@ -1,12 +1,28 @@
+"use strict";
+
+// Thin wrappers over WebGL 1: buffers, textures, framebuffers, programs and
+// renderables. Programs switch only when needed and skip scalar uniforms that
+// did not change; renderables keep their attribute setup in a vertex array
+// object (OES_vertex_array_object) when the browser has one.
+
+// Per-context state shared by the wrappers (call once after creating the context).
+function setup(gl) {
+    gl.__vao = gl.getExtension("OES_vertex_array_object");
+    gl.__program = null;
+}
+
+module.exports.setup = setup;
+
 
 //|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+// Attribute buffers for a layout {name: size} (floats).
 function buildAttribs(gl, layout) {
     var attribs = {};
     for (var key in layout) {
         attribs[key] = {
             buffer: new GLBuffer(gl),
             size: layout[key]
-        }
+        };
     }
     return attribs;
 }
@@ -25,7 +41,7 @@ function getExtensions(gl, extArray) {
         ext[extArray[i]] = e;
     }
     return ext;
-};
+}
 
 module.exports.getExtensions = getExtensions;
 
@@ -44,9 +60,9 @@ function Framebuffer(gl, color, depth, ext) {
                 drawBuffers.push(ext["COLOR_ATTACHMENT" + i + "_WEBGL"]);
             }
             ext.drawBuffersWEBGL(drawBuffers);
-            for (var i = 0; i < color.length; i++) {
-                gl.framebufferTexture2D(gl.FRAMEBUFFER, ext["COLOR_ATTACHMENT" + i + "_WEBGL"],
-                    gl.TEXTURE_2D, color[i].texture, 0);
+            for (var j = 0; j < color.length; j++) {
+                gl.framebufferTexture2D(gl.FRAMEBUFFER, ext["COLOR_ATTACHMENT" + j + "_WEBGL"],
+                    gl.TEXTURE_2D, color[j].texture, 0);
             }
         } else {
             gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, color[0].texture, 0);
@@ -58,15 +74,14 @@ function Framebuffer(gl, color, depth, ext) {
 
     self.bind = function() {
         gl.bindFramebuffer(gl.FRAMEBUFFER, self.fb);
-    }
+    };
 
     self.destroy = function() {
         gl.deleteFramebuffer(self.fb);
-    }
+    };
 
     self.initialize();
-
-};
+}
 
 module.exports.Framebuffer = Framebuffer;
 
@@ -84,6 +99,8 @@ function Texture(gl, index, data, width, height, options) {
     options.type = options.type || gl.UNSIGNED_BYTE;
 
     var self = this;
+    self.width = width;
+    self.height = height;
 
     self.initialize = function() {
         self.index = index;
@@ -94,9 +111,9 @@ function Texture(gl, index, data, width, height, options) {
         gl.texParameteri(options.target, gl.TEXTURE_MIN_FILTER, options.min);
         gl.texParameteri(options.target, gl.TEXTURE_WRAP_S, options.wraps);
         gl.texParameteri(options.target, gl.TEXTURE_WRAP_T, options.wrapt);
-        gl.texImage2D(options.target, 0, options.internalFormat, width, height, 
+        gl.texImage2D(options.target, 0, options.internalFormat, width, height,
             0, options.format, options.type, data);
-    }
+    };
 
     self.bind = function() {
         gl.bindTexture(options.target, self.texture);
@@ -108,14 +125,7 @@ function Texture(gl, index, data, width, height, options) {
 
     self.destroy = function() {
         gl.deleteTexture(self.texture);
-    }
-
-    self.reset = function() {
-        self.activate();
-        self.bind();
-        gl.texImage2D(options.target, 0, options.internalFormat, width, height, 
-            0, options.format, options.type, data);
-    }
+    };
 
     self.initialize();
 }
@@ -124,67 +134,95 @@ module.exports.Texture = Texture;
 
 
 //|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-function GLBuffer(gl) {
+// A GPU buffer; `target` is ARRAY_BUFFER (default) or ELEMENT_ARRAY_BUFFER.
+function GLBuffer(gl, target) {
 
     var self = this;
+    target = target || gl.ARRAY_BUFFER;
 
-    self.initialize = function() {
-        self.buffer = gl.createBuffer();
-    }
+    self.buffer = gl.createBuffer();
 
     self.bind = function() {
-        gl.bindBuffer(gl.ARRAY_BUFFER, self.buffer);
-    }
+        gl.bindBuffer(target, self.buffer);
+    };
 
     self.set = function(data) {
         self.bind();
-        gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
-    }
+        gl.bufferData(target, data, gl.STATIC_DRAW);
+    };
 
     self.destroy = function() {
         gl.deleteBuffer(self.buffer);
-    }
-
-    self.initialize();
-};
+    };
+}
 
 module.exports.GLBuffer = GLBuffer;
 
 
+// Points the program's attributes at the buffers. buffers: {name: {buffer,
+// size, type (default FLOAT), normalized, divisor}}. Returns the locations.
+function bindAttributes(gl, program, buffers, instancedExt) {
+    var used = [];
+    for (var name in buffers) {
+        var attrib = program.attribs[name];
+        if (!attrib) continue;   // not used by this program
+        var b = buffers[name];
+        b.buffer.bind();
+        gl.enableVertexAttribArray(attrib.location);
+        gl.vertexAttribPointer(attrib.location, b.size, b.type || gl.FLOAT, !!b.normalized, 0, 0);
+        if (instancedExt) instancedExt.vertexAttribDivisorANGLE(attrib.location, b.divisor || 0);
+        used.push(attrib.location);
+    }
+    return used;
+}
+
+// Draws with the renderable's vertex array object (made on first use), or
+// sets up the attributes around the draw without one.
+function drawWith(gl, self, program, buffers, instancedExt, draw) {
+    program.use();
+    var vao = gl.__vao;
+    if (vao) {
+        if (!self.vao) {
+            self.vao = vao.createVertexArrayOES();
+            vao.bindVertexArrayOES(self.vao);
+            bindAttributes(gl, program, buffers, instancedExt);
+            if (self.index) self.index.buffer.bind();
+        } else {
+            vao.bindVertexArrayOES(self.vao);
+        }
+        draw();
+        vao.bindVertexArrayOES(null);
+        return;
+    }
+    var used = bindAttributes(gl, program, buffers, instancedExt);
+    if (self.index) self.index.buffer.bind();
+    draw();
+    // Divisors are global attribute state without a vertex array object.
+    for (var k = 0; k < used.length; k++) {
+        if (instancedExt) instancedExt.vertexAttribDivisorANGLE(used[k], 0);
+        gl.disableVertexAttribArray(used[k]);
+    }
+}
+
+
 //|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-function Renderable(gl, program, buffers, primitiveCount) {
+// Triangles: `primitiveCount` of them from the buffers, or with
+// index = {buffer (ELEMENT_ARRAY_BUFFER GLBuffer), count, type} indexed.
+function Renderable(gl, program, buffers, primitiveCount, index) {
 
     var self = this;
+    self.gl = gl;
     self.buffers = buffers;
-
+    self.index = index || null;
     self.primitiveCount = primitiveCount;
 
-    self.initialize = function() {
-    }
-
     self.render = function() {
-        program.use();
-        for (name in buffers) {
-            var buffer = buffers[name].buffer;
-            var size = buffers[name].size;
-            try {
-                var location = program.attribs[name].location;
-            } catch (e) {
-                console.log("Could not find location for", name);
-                throw e;
-            }
-            buffer.bind();
-            gl.enableVertexAttribArray(location);
-            gl.vertexAttribPointer(location, size, gl.FLOAT, false, 0, 0);
-        }
-        gl.drawArrays(gl.TRIANGLES, 0, 3 * primitiveCount);
-        for (name in buffers) {
-            gl.disableVertexAttribArray(program.attribs[name].location);
-        }
-    }
-
-    self.initialize();
-};
+        drawWith(gl, self, program, buffers, null, function() {
+            if (self.index) gl.drawElements(gl.TRIANGLES, self.index.count, self.index.type, 0);
+            else gl.drawArrays(gl.TRIANGLES, 0, 3 * primitiveCount);
+        });
+    };
+}
 
 module.exports.Renderable = Renderable;
 
@@ -197,27 +235,15 @@ module.exports.Renderable = Renderable;
 function InstancedRenderable(gl, program, buffers, vertexCount, instanceCount, instancedExt, mode) {
 
     var self = this;
+    self.gl = gl;
     self.buffers = buffers;
 
     self.render = function() {
-        program.use();
-        var used = [];
-        for (var name in buffers) {
-            var location = program.attribs[name].location;
-            buffers[name].buffer.bind();
-            gl.enableVertexAttribArray(location);
-            gl.vertexAttribPointer(location, buffers[name].size, gl.FLOAT, false, 0, 0);
-            instancedExt.vertexAttribDivisorANGLE(location, buffers[name].divisor || 0);
-            used.push(location);
-        }
-        instancedExt.drawArraysInstancedANGLE(mode === undefined ? gl.TRIANGLES : mode, 0, vertexCount, instanceCount);
-        // Divisors are global attribute state: reset them for other programs.
-        for (var k = 0; k < used.length; k++) {
-            instancedExt.vertexAttribDivisorANGLE(used[k], 0);
-            gl.disableVertexAttribArray(used[k]);
-        }
-    }
-};
+        drawWith(gl, self, program, buffers, instancedExt, function() {
+            instancedExt.drawArraysInstancedANGLE(mode === undefined ? gl.TRIANGLES : mode, 0, vertexCount, instanceCount);
+        });
+    };
+}
 
 module.exports.InstancedRenderable = InstancedRenderable;
 
@@ -231,11 +257,14 @@ function Program(gl, vertexSource, fragmentSource) {
         self.program = self.compileProgram(vertexSource, fragmentSource);
         self.attribs = self.gatherAttribs();
         self.uniforms = self.gatherUniforms();
-    }
+    };
 
     self.use = function() {
-        gl.useProgram(self.program);
-    }
+        if (gl.__program !== self.program) {
+            gl.useProgram(self.program);
+            gl.__program = self.program;
+        }
+    };
 
     self.compileProgram = function(vertexSource, fragmentSource) {
         var vertexShader = self.compileShader(vertexSource, gl.VERTEX_SHADER);
@@ -249,7 +278,7 @@ function Program(gl, vertexSource, fragmentSource) {
             throw "Failed to compile program.";
         }
         return program;
-    }
+    };
 
     self.compileShader = function(source, type) {
         var shader = gl.createShader(type);
@@ -259,31 +288,42 @@ function Program(gl, vertexSource, fragmentSource) {
             var err = gl.getShaderInfoLog(shader);
             var lineno = parseInt(err.split(':')[2]);
             var split = source.split("\n");
-            for (var i in split) {
-                var q = parseInt(i);
-                console.log(q + "  " + split[i]);
-                if (i == lineno - 1) {
+            for (var i = 0; i < split.length; i++) {
+                console.log(i + "  " + split[i]);
+                if (i === lineno - 1) {
                     console.warn(err);
                 }
             }
-            typeString = type == gl.VERTEX_SHADER ? "vertex" : "fragment";
+            var typeString = type === gl.VERTEX_SHADER ? "vertex" : "fragment";
             throw "Failed to compile " + typeString + " shader.";
         }
         return shader;
-    }
+    };
 
-    self.setUniform = function(name, type, value) {
-        var args = Array.prototype.slice.call(arguments, 2);
-        self.use(); // Make this idempotent. At the context level, perhaps?
-        try {
-            var location = self.uniforms[name].location;
+    // setUniform(name, "1f" | "1i" | "2fv" | "3fv" | "4fv", value) or
+    // setUniform(name, "Matrix4fv", transpose, value). Uniforms the compiler
+    // removed are ignored; unchanged scalars are not sent again.
+    self.setUniform = function(name, type, a, b) {
+        self.use();
+        var u = self.uniforms[name];
+        if (u === undefined) return;
+        if (type === "1f" || type === "1i") {
+            if (u.value === a) return;
+            u.value = a;
+            if (type === "1f") gl.uniform1f(u.location, a);
+            else gl.uniform1i(u.location, a);
+        } else if (type === "Matrix4fv") {
+            gl.uniformMatrix4fv(u.location, a, b);
+        } else if (type === "2fv") {
+            gl.uniform2fv(u.location, a);
+        } else if (type === "3fv") {
+            gl.uniform3fv(u.location, a);
+        } else if (type === "4fv") {
+            gl.uniform4fv(u.location, a);
+        } else {
+            gl["uniform" + type](u.location, a);
         }
-        catch(e) {
-            console.log(name);
-            throw e;
-        }
-        gl['uniform' + type].apply(gl, [location].concat(args));
-    }
+    };
 
     self.gatherUniforms = function() {
         var uniforms = {};
@@ -298,7 +338,7 @@ function Program(gl, vertexSource, fragmentSource) {
             };
         }
         return uniforms;
-    }
+    };
 
     self.gatherAttribs = function() {
         var attribs = {};
@@ -313,20 +353,20 @@ function Program(gl, vertexSource, fragmentSource) {
             };
         }
         return attribs;
-    }   
+    };
 
-//|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
     self.initialize();
+}
 
-};
-
-//|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 module.exports.Program = Program;
 
-// Frees the GPU buffers of a Renderable or InstancedRenderable (or null).
+// Frees the GPU buffers (and vertex array object) of a Renderable or
+// InstancedRenderable (or null).
 module.exports.destroy = function(renderable) {
     if (!renderable) return;
     for (var name in renderable.buffers) {
         renderable.buffers[name].buffer.destroy();
     }
+    if (renderable.index) renderable.index.buffer.destroy();
+    if (renderable.vao && renderable.gl && renderable.gl.__vao) renderable.gl.__vao.deleteVertexArrayOES(renderable.vao);
 };

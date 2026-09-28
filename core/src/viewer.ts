@@ -371,6 +371,26 @@ export class SpeckViewer {
   private removeInteractions: (() => void) | null = null;
   private frame = 0;
   private snapshotRequested = false;
+  // Rendering pauses while the viewer is scrolled out of sight.
+  private visible = true;
+  private intersectionObserver: any = null;
+  private contextLost = false;
+  private lostHandler = (e: Event) => {
+    // Keep the context restorable, and redraw everything when it comes back.
+    e.preventDefault();
+    this.contextLost = true;
+    this.setStatus('The graphics were reset by the browser; redrawing…');
+  };
+  private restoredHandler = () => {
+    this.contextLost = false;
+    this.renderer = new speckRenderer(this.canvas, this.view.resolution, this.view.aoRes);
+    if (this.system) {
+      speckSystem.setFrame(this.system, this.view.frame);
+      this.rebuild();
+    }
+    this.needReset = true;
+    this.setStatus('');
+  };
   private cameraTimer: any = null;
   private exportQueue: Promise<void> = Promise.resolve();
   private studioInstance: FilmStudio | null = null;
@@ -431,6 +451,15 @@ export class SpeckViewer {
       },
     });
 
+    this.canvas.addEventListener('webglcontextlost', this.lostHandler);
+    this.canvas.addEventListener('webglcontextrestored', this.restoredHandler);
+    const IntersectionObserverImpl = (window as any).IntersectionObserver;
+    if (IntersectionObserverImpl) {
+      this.intersectionObserver = new IntersectionObserverImpl((entries: any[]) => {
+        this.visible = entries[entries.length - 1].isIntersecting;
+      });
+      this.intersectionObserver.observe(el);
+    }
     const ResizeObserverImpl = (window as any).ResizeObserver;
     if (ResizeObserverImpl) {
       this.resizeObserver = new ResizeObserverImpl(() => this.reflow());
@@ -451,6 +480,9 @@ export class SpeckViewer {
     }
     window.removeEventListener('resize', this.reflowHandler);
     document.removeEventListener('pointerdown', this.closeMenuHandler);
+    if (this.intersectionObserver) this.intersectionObserver.disconnect();
+    this.canvas.removeEventListener('webglcontextlost', this.lostHandler);
+    this.canvas.removeEventListener('webglcontextrestored', this.restoredHandler);
     if (this.removeInteractions) {
       this.removeInteractions();
     }
@@ -1448,7 +1480,7 @@ export class SpeckViewer {
         await new Promise((resolve) => requestAnimationFrame(resolve));
       }
       // Draw once more and copy right away (the WebGL buffer is not preserved).
-      renderer.render(view);
+      renderer.render(view, true);
       out.width = width;
       out.height = height;
       const ctx = out.getContext('2d') as CanvasRenderingContext2D;
@@ -1577,8 +1609,10 @@ export class SpeckViewer {
     if (!this.renderer) {
       return;
     }
-    if (this.exporting) {
-      // An export is using the renderer.
+    if (this.exporting || this.contextLost || (!this.visible && !this.snapshotRequested)) {
+      // An export is using the renderer, the GPU was reset, or the viewer is
+      // out of sight (nothing to draw until it scrolls back).
+      this.lastFrameTime = 0;
       this.frame = requestAnimationFrame(() => this.loop());
       return;
     }
@@ -1617,7 +1651,9 @@ export class SpeckViewer {
         this.renderer.reset();
         this.needReset = false;
       }
-      this.renderer.render(this.view);
+      // A converged picture stays on the canvas without redrawing; a snapshot
+      // needs a fresh one (the drawing buffer is not kept).
+      this.renderer.render(this.view, this.snapshotRequested);
       if (this.panel.shading) {
         this.panel.shadingProgress(this.view.ao > 0 ? this.renderer.getAOProgress() : 1);
       }

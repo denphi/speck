@@ -27,7 +27,7 @@ uniform vec2 uSceneTopRight;
 uniform vec2 uRotBottomLeft;
 uniform vec2 uRotTopRight;
 uniform float uDepth;
-uniform float uRes;
+uniform vec2 uRes;
 uniform float uAORes;
 uniform int uSampleCount;
 
@@ -103,7 +103,7 @@ uniform vec2 uSceneTopRight;
 uniform vec2 uRotBottomLeft;
 uniform vec2 uRotTopRight;
 uniform float uDepth;
-uniform float uRes;
+uniform vec2 uRes;
 uniform float uShadowRes;
 uniform float uSoftness;
 
@@ -164,7 +164,11 @@ uniform sampler2D uSurfaceDepth;
 uniform sampler2D uSurfaceNormal;
 uniform sampler2D uSurfaceAccumulator;
 uniform float uSurfaceOpacity;
-uniform float uRes;
+uniform vec2 uRes;
+// Texture coordinates per unit of the camera's square frame: the targets
+// cover only its visible (bottom-left) part, so offsets and positions given
+// in frame units are scaled by this.
+uniform vec2 uFrame;
 uniform float uDepth;
 uniform float uAO;
 uniform float uBrightness;
@@ -227,24 +231,26 @@ vec4 shadeLayer(sampler2D colorTex, sampler2D depthTex, sampler2D normalTex, sam
         // Eight taps (axes and diagonals) keep wide outlines continuous.
         float r = uOutlineWidth/511.0;
         float q = 0.7071 * r;
+        vec2 ox = vec2(r, 0.0) * uFrame, oy = vec2(0.0, r) * uFrame;
+        vec2 d1 = vec2(q, q) * uFrame, d2 = vec2(q, -q) * uFrame;
         float d = 0.0;
-        d = max(d, abs(texture2D(depthTex, p + vec2(-r,  0)).r - depth));
-        d = max(d, abs(texture2D(depthTex, p + vec2( r,  0)).r - depth));
-        d = max(d, abs(texture2D(depthTex, p + vec2( 0, -r)).r - depth));
-        d = max(d, abs(texture2D(depthTex, p + vec2( 0,  r)).r - depth));
-        d = max(d, abs(texture2D(depthTex, p + vec2(-q, -q)).r - depth));
-        d = max(d, abs(texture2D(depthTex, p + vec2( q, -q)).r - depth));
-        d = max(d, abs(texture2D(depthTex, p + vec2(-q,  q)).r - depth));
-        d = max(d, abs(texture2D(depthTex, p + vec2( q,  q)).r - depth));
+        d = max(d, abs(texture2D(depthTex, p - ox).r - depth));
+        d = max(d, abs(texture2D(depthTex, p + ox).r - depth));
+        d = max(d, abs(texture2D(depthTex, p - oy).r - depth));
+        d = max(d, abs(texture2D(depthTex, p + oy).r - depth));
+        d = max(d, abs(texture2D(depthTex, p - d1).r - depth));
+        d = max(d, abs(texture2D(depthTex, p + d2).r - depth));
+        d = max(d, abs(texture2D(depthTex, p - d2).r - depth));
+        d = max(d, abs(texture2D(depthTex, p + d1).r - depth));
         float line;
         if (uOutlineEdges > 0.5) {
             // Color changes (another chain) and depth jumps over ~4 Angstrom.
             vec3 c0 = sceneColor.rgb;
             float e = 0.0;
-            e = max(e, length(texture2D(colorTex, p + vec2(-r,  0)).rgb - c0));
-            e = max(e, length(texture2D(colorTex, p + vec2( r,  0)).rgb - c0));
-            e = max(e, length(texture2D(colorTex, p + vec2( 0, -r)).rgb - c0));
-            e = max(e, length(texture2D(colorTex, p + vec2( 0,  r)).rgb - c0));
+            e = max(e, length(texture2D(colorTex, p - ox).rgb - c0));
+            e = max(e, length(texture2D(colorTex, p + ox).rgb - c0));
+            e = max(e, length(texture2D(colorTex, p - oy).rgb - c0));
+            e = max(e, length(texture2D(colorTex, p + oy).rgb - c0));
             // Depth steps inside molecules too (as in the illustrations), scaled
             // with the structure so big complexes are not covered in lines.
             float t = max(3.0, 0.012 * uDepth);
@@ -266,7 +272,7 @@ vec4 shadeLayer(sampler2D colorTex, sampler2D depthTex, sampler2D normalTex, sam
     shade = pow(shade, 2.0);
     float cutFill = 0.0;
     if (uCutLight > 0.0 && covered > 0.0) {
-        vec3 q = vec3(mix(uRect.xy, uRect.zw, p), uDepth / 2.0 - depth * uDepth);
+        vec3 q = vec3(mix(uRect.xy, uRect.zw, p / uFrame), uDepth / 2.0 - depth * uDepth);
         float behind = max(0.0, uCut.w - dot(uCut.xyz, q));    // distance behind the plane
         cutFill = uCutLight * exp(-behind / (0.25 * uDepth));
         shade = mix(shade, 1.0, cutFill);
@@ -328,14 +334,16 @@ void main() {
         }
     }
     if (uFloor > 0.0 && result.a < 0.999) {
+        // The floor is laid out in frame units (P); lookups go back to texture coordinates.
+        vec2 P = p / uFrame;
         float h = max(uFloorHeight, 0.02);
-        float d = uFloorY - p.y;          // below the contact line (> 0) or behind it (< 0)
+        float d = uFloorY - P.y;          // below the contact line (> 0) or behind it (< 0)
         // The floor surface: a soft ground tone that starts a little behind the
         // molecule (above the contact line), strongest under it, and fades out
         // toward the front and the sides like a studio sweep.
         float behind = smoothstep(-0.3 * h, 0.05 * h, d);
         float front = 1.0 - smoothstep(0.1 * h, 1.3 * h, d);
-        float side = 1.0 - smoothstep(0.35, 0.75, abs(p.x - uFloorX) / max(uFloorWidth, 0.1));
+        float side = 1.0 - smoothstep(0.35, 0.75, abs(P.x - uFloorX) / max(uFloorWidth, 0.1));
         float ground = 0.07 * uFloor * behind * front * side;
         float shadow = 0.0;
         vec4 mirror = vec4(0.0);
@@ -349,7 +357,7 @@ void main() {
                 float w = exp(-3.0 * u * u);
                 for (int j = 0; j < 4; j++) {
                     float dy = (0.01 + 0.05 * float(j)) * h + 0.5 * d;
-                    cover += w * texture2D(uSceneColor, vec2(p.x + u * spread, uFloorY + dy)).a;
+                    cover += w * texture2D(uSceneColor, vec2(P.x + u * spread, uFloorY + dy) * uFrame).a;
                     weight += w;
                 }
             }
@@ -358,7 +366,7 @@ void main() {
             shadow = uFloor * cover * exp(-d / (0.22 * h)) * 0.55 * smoothstep(0.0, 0.08 * h, d);
             // Reflection: the molecule mirrored in the floor, fading with distance.
             if (uFloorReflect > 0.0) {
-                vec2 m = vec2(p.x, uFloorY + d);
+                vec2 m = vec2(P.x, uFloorY + d) * uFrame;
                 if (m.y < 1.0) {
                     mirror = shadeLayer(uSceneColor, uSceneDepth, uSceneNormal, uAccumulatorOut, 1.0, m);
                     mirror *= uFloorReflect * (1.0 - smoothstep(0.0, 0.55 * h, d));
@@ -421,7 +429,7 @@ vec4 packDepth(float d) {
 
 uniform vec2 uBottomLeft;
 uniform vec2 uTopRight;
-uniform float uRes;
+uniform vec2 uRes;
 uniform float uDepth;
 uniform int uMode;
 // Cutaway: points p (centered, rotated frame) with dot(uClip.xyz, p) > uClip.w
@@ -434,7 +442,7 @@ varying float vRadius;
 varying vec3 vColor;
 varying float vMetal;
 
-vec2 res = vec2(uRes, uRes);
+vec2 res = uRes;
 
 void main() {
     vec3 r0 = vec3(uBottomLeft + (gl_FragCoord.xy/res) * (uTopRight - uBottomLeft), 0.0);
@@ -465,7 +473,9 @@ void main() {
             color *= 0.82;
         }
     }
-    if (uMode == 0) {
+    if (uMode == 3) {
+        gl_FragColor = vec4(0.0);   // depth only (color writes are masked)
+    } else if (uMode == 0) {
         gl_FragColor = vec4(color, 1);
     } else if (uMode == 1) {
         // Alpha carries the material: 1.0 for metals, 0.5 otherwise.
@@ -605,7 +615,7 @@ uniform mat4 uRotation;
 uniform vec2 uBottomLeft;
 uniform vec2 uTopRight;
 uniform float uDepth;
-uniform float uRes;
+uniform vec2 uRes;
 uniform float uBondShade;
 uniform int uMode;
 uniform vec4 uClip;
@@ -636,7 +646,7 @@ mat3 alignVector(vec3 a, vec3 b) {
 
 void main() {
 
-    vec2 res = vec2(uRes, uRes);
+    vec2 res = uRes;
     vec3 r0 = vec3(uBottomLeft + (gl_FragCoord.xy/res) * (uTopRight - uBottomLeft), uDepth/2.0);
     vec3 rd = vec3(0, 0, -1);
 
@@ -700,7 +710,9 @@ void main() {
             color *= 0.82;
         }
     }
-    if (uMode == 0) {
+    if (uMode == 3) {
+        gl_FragColor = vec4(0.0);
+    } else if (uMode == 0) {
         gl_FragColor = vec4(color, 1);
     } else if (uMode == 1) {
         gl_FragColor = vec4(normal * 0.5 + 0.5, mix(0.5, 1.0, metal));
@@ -796,7 +808,8 @@ precision highp float;
 
 uniform sampler2D uColor;
 uniform sampler2D uDepth;
-uniform float uRes;
+uniform vec2 uRes;
+uniform vec2 uFrame;   // texture coordinates per frame unit (see the ao shader)
 uniform float uDOFPosition;
 uniform float uDOFStrength;
 // Scene depth range (Angstrom) and zoom (1 / frame width in Angstrom).
@@ -820,17 +833,22 @@ void main() {
 
     vec4 sum = texture2D(uColor, uv);
     float weight = 1.0;
-    float pixel = 1.0 / uRes;
+    // One pixel in frame units (radius and distances are fractions of the frame).
+    float pixel = 1.0 / (uRes.x * uFrame.x);
     if (radius > pixel) {
         // Rotate the spiral per pixel (interleaved gradient noise) so large
         // blurs show fine grain instead of a visible sampling pattern.
         float jitter = 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+        // Taps follow the blur's area: small blurs need few, large ones all 128.
+        float rpx = radius / pixel;
+        float n = clamp(8.0 + 0.5 * rpx * rpx, 12.0, float(TAPS));
         for (int i = 0; i < TAPS; i++) {
+            if (float(i) >= n) break;
             // Golden-angle spiral: even coverage of the disk.
-            float t = (float(i) + 0.5) / float(TAPS);
+            float t = (float(i) + 0.5) / n;
             float angle = float(i) * 2.39996323 + jitter;
             float dist = sqrt(t) * radius;
-            vec2 q = uv + vec2(cos(angle), sin(angle)) * dist;
+            vec2 q = uv + vec2(cos(angle), sin(angle)) * dist * uFrame;
             vec4 c = texture2D(uColor, q);
             // A sample counts only if its own blur reaches this pixel, so sharp
             // objects do not bleed into blurred ones.
@@ -861,7 +879,7 @@ void main() {
 precision highp float;
 
 uniform sampler2D uTexture;
-uniform float uRes;
+uniform vec2 uRes;
 
 void main() {
     float FXAA_SPAN_MAX = 8.0;
