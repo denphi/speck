@@ -689,20 +689,43 @@ class Speck(widgets.DOMWidget):
 
     # --- export -------------------------------------------------------------
 
-    def save_image(self, filename=None, width=None, height=None, scale=2, supersample=2,
-                   transparent=True, background='#ffffff', aoRes=1024, samples=1024,
+    def save_image(self, filename=None, size=None, quality='good', transparent=True, background='#ffffff',
+                   width=None, height=None, scale=None, supersample=None, aoRes=None, samples=None,
                    callback=None):
         """Render a high-resolution PNG in the browser and save it.
 
-        The image uses the current camera and settings. Give width and/or
-        height in pixels (the other side keeps the on-screen aspect), or
-        scale the on-screen size. Rendering runs in the browser after the
-        current cell finishes: the file is written, `last_image` set to the
-        PNG bytes and `callback(png_bytes)` called once it arrives. The
-        widget must be displayed. The largest side is limited to 4096 px.
+        The image uses the current camera and settings:
+
+            w.save_image("figure.png")                               # 2x the viewer
+            w.save_image("figure.png", size="screen", quality="best")
+            w.save_image("cover.png", size="portrait", transparent=False)
+
+        size: 'screen' (the viewer's shape, 3000 px on the longer side),
+        'largest' (4096 px), '1080p', '4k', 'square' (3000 x 3000),
+        'portrait' (2400 x 3000), 'vertical' (2160 x 3840) or (width,
+        height). Without it, twice the on-screen size (or `width` and/or
+        `height` in pixels, the other side keeping the viewer's shape, or
+        `scale`). When the shape differs from the viewer's, what is on
+        screen is kept (the whole structure is refitted if it was all
+        visible). quality: 'draft' (fast), 'good' (default) or 'best';
+        samples, supersample and aoRes set its parts directly. The widget's
+        camera button offers the same choices without code.
+
+        Rendering runs in the browser after the current cell finishes (it
+        starts once the viewer is on screen): the file is written,
+        `last_image` set to the PNG bytes and `callback(png_bytes)` called
+        once it arrives. The largest side is limited to 4096 px.
         """
+        if quality is not None and quality not in _IMAGE_QUALITY:
+            raise ValueError("quality must be one of %s" % ', '.join(_IMAGE_QUALITY))
+        if isinstance(size, (list, tuple)):
+            size = [int(size[0]), int(size[1])]
+        elif size is not None and size not in _IMAGE_SIZES:
+            raise ValueError("size must be one of %s or (width, height)" % ', '.join(_IMAGE_SIZES))
+        if size is None and width is None and height is None and scale is None:
+            scale = 2
         self._request('saveImage', 'image', filename, callback, dict(
-            width=width, height=height, scale=scale, supersample=supersample,
+            size=size, quality=quality, width=width, height=height, scale=scale, supersample=supersample,
             transparent=transparent, background=background, aoRes=aoRes, samples=samples))
 
     def save_animation(self, filename, frames=60, mode='turntable', fps=20, width=None,
@@ -932,6 +955,9 @@ class Speck(widgets.DOMWidget):
         i = _COLOR_SCHEMES.index(self.colorScheme)
         self.setColorSchema(_COLOR_SCHEMES[(i + 1) % len(_COLOR_SCHEMES)])
 
+
+_IMAGE_SIZES = ('screen', 'largest', '1080p', '4k', 'square', 'portrait', 'vertical')
+_IMAGE_QUALITY = ('draft', 'good', 'best')
 
 # Ambient-occlusion samples per video frame.
 _QUALITY = {'draft': 64, 'good': 256, 'best': 512}

@@ -89,8 +89,9 @@ else:
 
 
 def speck(data="", *, trajectory=None, height=400, preset=None, camera=None, return_state=False,
-          export_width=None, export_height=None, export_scale=2, export_supersample=2,
-          export_transparent=True, export_background="#ffffff", export_filename="speck.png",
+          export_size=None, export_quality=None, export_width=None, export_height=None,
+          export_scale=None, export_supersample=None, export_transparent=True,
+          export_background="#ffffff", export_filename="speck.png",
           film=None, film_loop=True, video=None, key=None, **settings):
     """Show a molecule with the Speck renderer.
 
@@ -117,12 +118,16 @@ def speck(data="", *, trajectory=None, height=400, preset=None, camera=None, ret
         settings (including toolbar changes) and nframes, and the app reruns
         when they change. When False (default) it returns None and never
         triggers reruns.
-    export_width, export_height, export_scale, export_supersample,
-    export_transparent, export_background, export_filename
-        High-resolution PNG downloaded by the toolbar's camera button: give
-        width and/or height in pixels (the other side keeps the on-screen
-        aspect) or a scale of the on-screen size. The largest side is
-        limited to 4096 px.
+    export_size, export_quality, export_transparent, export_background, export_filename
+        Starting choices of the camera button's menu, which saves a
+        high-resolution PNG: size "screen" (the viewer's shape, 3000 px;
+        default), "largest" (4096 px), "1080p", "4k", "square", "portrait"
+        (4:5) or "vertical" (9:16); quality "draft", "good" (default) or
+        "best"; a transparent or white background.
+    export_width, export_height, export_scale, export_supersample
+        Exact pixels instead of export_size (width and/or height, or a scale
+        of the on-screen size) and supersampling; used until a size is
+        picked in the menu. The largest side is limited to 4096 px.
     film : str, dict or list, optional
         A video played in the viewer with a player bar: play / pause, a
         time slider, and "Save video", which renders it as an MP4 in the
@@ -159,7 +164,8 @@ def speck(data="", *, trajectory=None, height=400, preset=None, camera=None, ret
         values.update(PRESETS["default"])
         values.update(PRESETS[preset])
     values.update(settings)
-    export = {"width": export_width, "height": export_height, "scale": export_scale,
+    export = {"size": export_size, "quality": export_quality,
+              "width": export_width, "height": export_height, "scale": export_scale,
               "supersample": export_supersample, "transparent": export_transparent,
               "background": export_background, "filename": export_filename}
     film_args = None

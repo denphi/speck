@@ -23,7 +23,9 @@ var RECIPES = [
      description: "Slices the structure open while it turns, to show the inside"},
     {name: "trajectory", label: "Play trajectory", seconds: 8, needs: "frames",
      description: "Plays the frames smoothly while swinging gently"},
-    {name: "showcase", label: "Showcase", seconds: 16, needs: null,
+    // A scripted story rather than a move that suits any structure: kept for
+    // Python (save_video(..., "showcase")) but not offered in menus.
+    {name: "showcase", label: "Showcase", seconds: 16, needs: null, menu: false,
      description: "Half a turn, then the ligand up close (or the inside), and back"}
 ];
 

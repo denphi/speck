@@ -454,29 +454,56 @@
     }
   }
 
-  document.getElementById("export").addEventListener("click", function () {
-    var width = parseInt(document.getElementById("exportSize").value);
-    var transparent = document.getElementById("exportTransparent").checked;
-    var button = this;
+  // Size and quality choices (the same as the viewer's camera menu and save_image in Python).
+  var imageUI = {size: document.getElementById("exportSize"), quality: document.getElementById("exportQuality"),
+                 background: document.getElementById("exportBackground"), about: document.getElementById("exportAbout"),
+                 note: document.getElementById("exportNote"), button: document.getElementById("export")};
+  Object.keys(S.IMAGE_SIZES).forEach(function (k) {
+    var o = document.createElement("option"); o.value = k; o.textContent = S.IMAGE_SIZES[k].label; imageUI.size.appendChild(o);
+  });
+  Object.keys(S.IMAGE_QUALITY).forEach(function (k) {
+    var o = document.createElement("option"); o.value = k; o.textContent = S.IMAGE_QUALITY[k].label; imageUI.quality.appendChild(o);
+  });
+  imageUI.quality.value = "good";
+  var lastImage = null;
+  function describeImage() {
+    var el = document.getElementById("viewer"), info = S.IMAGE_SIZES[imageUI.size.value];
+    var px = info.size;
+    if (!px) {
+      var w = el.clientWidth, h = el.clientHeight, long = info.long;
+      px = w >= h ? [long, Math.round(long * h / w)] : [Math.round(long * w / h), long];
+    }
+    imageUI.about.textContent = px[0] + " × " + px[1] + " px · " + info.hint.replace(/^[^:]*: /, "").replace(/^\d+ × \d+, /, "");
+  }
+  imageUI.size.addEventListener("change", describeImage);
+  window.addEventListener("resize", describeImage);
+  describeImage();
+
+  imageUI.button.addEventListener("click", function () {
+    var bg = imageUI.background.value, button = this;
+    lastImage = {size: imageUI.size.value, quality: imageUI.quality.value, background: bg};
     button.disabled = true;
-    viewer.renderImage({width: width, transparent: true}).then(function (image) {
-      if (transparent) return image.png;
+    imageUI.note.textContent = "Rendering…";
+    var started = performance.now();
+    viewer.renderImage({size: lastImage.size, quality: lastImage.quality, transparent: true}).then(function (image) {
+      if (bg === "transparent") return {png: image.png, width: image.width, height: image.height};
       return new Promise(function (resolve) {
         var img = new Image(), url = URL.createObjectURL(new Blob([image.png], {type: "image/png"}));
         img.onload = function () {
           var c = document.createElement("canvas");
           c.width = image.width; c.height = image.height;
           var ctx = c.getContext("2d");
-          paintBackground(ctx, c.width, c.height);
+          if (bg === "white") { ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, c.width, c.height); }
+          else paintBackground(ctx, c.width, c.height);
           ctx.drawImage(img, 0, 0);
-          paintVignette(ctx, c.width, c.height);
+          if (bg === "page") paintVignette(ctx, c.width, c.height);
           URL.revokeObjectURL(url);
-          c.toBlob(function (b) { b.arrayBuffer().then(resolve); }, "image/png");
+          c.toBlob(function (b) { b.arrayBuffer().then(function (png) { resolve({png: png, width: c.width, height: c.height}); }); }, "image/png");
         };
         img.src = url;
       });
-    }).then(function (png) {
-      var url = URL.createObjectURL(new Blob([png], {type: "image/png"}));
+    }).then(function (r) {
+      var url = URL.createObjectURL(new Blob([r.png], {type: "image/png"}));
       var a = document.createElement("a");
       a.href = url;
       a.download = "ipyspeck.png";
@@ -484,7 +511,9 @@
       a.click();
       document.body.removeChild(a);
       setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
-    }).catch(function (e) { info.textContent = "Export failed: " + e.message; })
+      imageUI.note.textContent = "Saved ipyspeck.png to your downloads: " + r.width + " × " + r.height + " px, " +
+        (r.png.byteLength / 1e6).toFixed(1) + " MB, made in " + ((performance.now() - started) / 1000).toFixed(1) + " s.";
+    }).catch(function (e) { imageUI.note.textContent = "The image could not be made: " + e.message; })
       .then(function () { button.disabled = false; });
   });
 
@@ -502,7 +531,7 @@
     preview: document.getElementById("filmPreview"), save: document.getElementById("filmSave")
   };
   var lastFilm = null;
-  S.VIDEO_RECIPES.forEach(function (r) {
+  S.VIDEO_RECIPES.filter(function (r) { return r.menu !== false; }).forEach(function (r) {
     var o = document.createElement("option");
     o.value = r.name;
     o.textContent = r.label;
@@ -511,10 +540,36 @@
   function recipe() {
     return S.VIDEO_RECIPES.filter(function (r) { return r.name === film.kind.value; })[0];
   }
+  // An example's own film (made for that structure), shown in the menu while it is active.
+  var exampleFilm = null;
+  var exampleOption = document.createElement("option");
+  exampleOption.value = "example";
+  function useExample(ex) {
+    exampleFilm = ex;
+    exampleOption.textContent = ex.label + " (example)";
+    if (!exampleOption.parentNode) film.kind.appendChild(exampleOption);
+    film.kind.value = "example";
+    film.seconds.disabled = true;
+    film.title.value = ex.title || "";
+    describe();
+  }
+  function leaveExample() {
+    exampleFilm = null;
+    if (exampleOption.parentNode) exampleOption.remove();
+    film.seconds.disabled = false;
+    [].forEach.call(examplesBox.children, function (x) { x.classList.remove("active"); });
+  }
   function showSeconds() { film.secondsV.textContent = film.seconds.value; }
   // A short example of each ready-made video (hemoglobin; an NMR ensemble for 'trajectory').
   var sample = document.getElementById("filmSample");
   function describe() {
+    if (exampleFilm) {
+      sample.removeAttribute("src");
+      sample.hidden = true;
+      film.about.textContent = exampleFilm.about;
+      return;
+    }
+    sample.hidden = false;
     var src = "videos/" + film.kind.value + ".mp4";
     if (sample.getAttribute("src") !== src) sample.setAttribute("src", src);
     var r = recipe(), ok = viewer.videoRecipes().filter(function (x) { return x.name === r.name; })[0];
@@ -526,10 +581,12 @@
     var avail = {};
     viewer.videoRecipes().forEach(function (r) { avail[r.name] = r.available; });
     [].forEach.call(film.kind.options, function (o) { o.disabled = avail[o.value] === false; });
-    if (film.kind.selectedOptions[0] && film.kind.selectedOptions[0].disabled) film.kind.value = "spin";
+    if (!exampleFilm && film.kind.selectedOptions[0] && film.kind.selectedOptions[0].disabled) film.kind.value = "spin";
     describe();
   }
   film.kind.addEventListener("change", function () {
+    if (film.kind.value === "example") return;
+    leaveExample();
     film.seconds.value = recipe().seconds;
     showSeconds();
     describe();
@@ -544,8 +601,8 @@
   }
 
   function filmSpec() {
-    var spec = {recipe: film.kind.value, seconds: parseFloat(film.seconds.value)};
     var title = film.title.value.trim();
+    var spec = exampleFilm ? {shots: exampleFilm.shots} : {recipe: film.kind.value, seconds: parseFloat(film.seconds.value)};
     if (title) spec.title = title;
     return spec;
   }
@@ -591,13 +648,22 @@
     });
   });
 
-  // One click: load a structure and play a ready-made video of it.
+  // One click: load a structure and play a video of it: a ready-made one, or
+  // a film written for that structure (its own shots).
+  var GFP_CHROMOPHORE = {resName: "CRO", chain: "A"};
   var VIDEO_EXAMPLES = [
     {label: "Hemoglobin tour", query: "4HHB", preset: "glossy", recipe: "tour", title: "Hemoglobin"},
     {label: "Drug in its pocket", query: "1IEP", preset: "cover", recipe: "focus", title: "Imatinib in ABL kinase"},
     {label: "Inside a nucleosome", query: "1KX5", preset: "matte", recipe: "reveal", title: "Nucleosome"},
     {label: "NMR ensemble", query: "1D3Z", preset: "glossy", recipe: "trajectory", title: "Ubiquitin in solution"},
-    {label: "GFP showcase", query: "1EMA", preset: "glossy", recipe: "showcase", title: "Green fluorescent protein"}
+    {label: "GFP story", query: "1EMA", preset: "glossy", title: "Green fluorescent protein",
+     about: "Made for GFP: half a turn, into the barrel to its chromophore, a focus pull, and back out.",
+     shots: [{type: "orbit", seconds: 5, degrees: 180, tilt: 15},
+             {type: "fly_to", selection: GFP_CHROMOPHORE, seconds: 3, face: true},
+             {type: "together", shots: [{type: "rock", seconds: 3, degrees: 12},
+                                        {type: "rack_focus", to: GFP_CHROMOPHORE, seconds: 2, strength: 0.7},
+                                        {type: "title", text: "The chromophore", subtitle: "Ser65-Tyr66-Gly67", seconds: 3, position: "bottom-right"}]},
+             {type: "together", shots: [{type: "home", seconds: 4}, {type: "fade", settings: {dofStrength: 0}, seconds: 4}]}]}
   ];
   var examplesBox = document.getElementById("filmExamples");
   VIDEO_EXAMPLES.forEach(function (ex) {
@@ -607,16 +673,38 @@
       [].forEach.call(examplesBox.children, function (x) { x.classList.toggle("active", x === b); });
       query.value = ex.query;
       load({query: ex.query, preset: ex.preset}, null).then(function () {
-        film.kind.value = ex.recipe;
-        film.seconds.value = recipe().seconds;
-        showSeconds();
-        film.title.value = ex.title;
+        if (ex.shots) {
+          useExample(ex);
+        } else {
+          leaveExample();
+          b.classList.add("active");
+          film.kind.value = ex.recipe;
+          film.seconds.value = recipe().seconds;
+          showSeconds();
+          film.title.value = ex.title;
+        }
         updateRecipes();
         preview();
       });
     });
     examplesBox.appendChild(b);
   });
+
+  // A shot as an ipyspeck.shots call.
+  var SHOT_ARGS = {fly_to: "selection", rack_focus: "to", title: "text"};
+  function pyShot(shot) {
+    if (shot.type === "together") return "shots.together(" + shot.shots.map(pyShot).join(", ") + ")";
+    var args = [], rest = Object.assign({}, shot);
+    delete rest.type;
+    var first = SHOT_ARGS[shot.type];
+    if (first) { args.push(pyValue(rest[first])); delete rest[first]; }
+    if (rest.settings) {
+      Object.keys(rest.settings).forEach(function (k) { args.push(k + "=" + pyValue(rest.settings[k])); });
+      delete rest.settings;
+    }
+    Object.keys(rest).forEach(function (k) { args.push((k === "from" ? "start" : k) + "=" + pyValue(rest[k])); });
+    return "shots." + shot.type + "(" + args.join(", ") + ")";
+  }
 
   // --- copy as Python ---------------------------------------------------------
   // The current structure, settings (those that differ from the defaults) and
@@ -659,14 +747,23 @@
     lines.push("w = " + call);
     lines = lines.concat(settings);
     lines.push(")");
-    if (background.center) {
-      lines.push("", "# Background of the page (used by save_image):");
-      lines.push('w.save_image("figure.png", width=3000, transparent=False, background="' + rgbHex(background.center) + '")');
-    }
+    var img = lastImage || {size: imageUI.size.value, quality: imageUI.quality.value, background: imageUI.background.value};
+    var bgArg = img.background === "transparent" ? "" : ", transparent=False" +
+      (img.background === "page" && background.center ? ', background="' + rgbHex(background.center) + '"' : "");
+    lines.push("", "# The image from Save an image (the widget's camera button offers the same choices):");
+    lines.push('w.save_image("figure.png", size=' + pyValue(img.size) + ", quality=" + pyValue(img.quality) + bgArg + ")");
     lines.push("w");
-    if (lastFilm) {
+    if (lastFilm && lastFilm.spec.shots) {
+      var o2 = lastFilm.options, f2 = lastFilm.spec;
+      lines.push("", "# The example's film; w.preview(film) plays it in the widget first:", "from ipyspeck import shots",
+                 "film = [" + f2.shots.map(pyShot).join(",\n        ") + "]");
+      lines.push('w.save_video("movie.mp4", film' + (f2.title ? ", title=" + pyValue(f2.title) : "") + ",\n             size=" + pyValue(o2.size) +
+                 ", fps=" + o2.fps + ", quality=" + pyValue(o2.quality) +
+                 (typeof o2.background === "object" ? ", background=" + pyValue(o2.background) : "") +
+                 (o2.vignette ? ", vignette=" + o2.vignette : "") + ")");
+    } else if (lastFilm) {
       var o = lastFilm.options, f = lastFilm.spec;
-      lines.push("", "# The video from Animate; w.preview(" + pyValue(f.recipe) + ") plays it in the widget first:");
+      lines.push("", "# The video from Make a video; w.preview(" + pyValue(f.recipe) + ") plays it in the widget first:");
       lines.push('w.save_video("movie.mp4", ' + pyValue(f.recipe) + ", seconds=" + f.seconds +
                  (f.title ? ", title=" + pyValue(f.title) : "") + ",\n             size=" + pyValue(o.size) +
                  ", fps=" + o.fps + ", quality=" + pyValue(o.quality) +

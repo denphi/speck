@@ -186,6 +186,26 @@ const LOOK_LABELS: { [key: string]: string } = {
 type MenuItem = [string, string] | [string, string, string];
 type MenuSection = (title: string, items: MenuItem[], current: string, pick: (v: string) => void) => void;
 
+// Image sizes by name: [width, height] in pixels, or null for the viewer's
+// own shape with its longer side at `long` pixels.
+export const IMAGE_SIZES: { [name: string]: { label: string; hint: string; size: [number, number] | null; long?: number } } = {
+  screen: { label: 'Same shape as the viewer', hint: '3000 px on the longer side: figures and slides', size: null, long: 3000 },
+  largest: { label: 'Largest', hint: 'The viewer\'s shape at 4096 px: posters and print', size: null, long: 4096 },
+  '1080p': { label: 'HD 1080p', hint: '1920 × 1080, for slides and screens', size: [1920, 1080] },
+  '4k': { label: '4K', hint: '3840 × 2160, for large screens', size: [3840, 2160] },
+  square: { label: 'Square', hint: '3000 × 3000, for social media and covers', size: [3000, 3000] },
+  portrait: { label: 'Portrait 4:5', hint: '2400 × 3000, for journal covers and posts', size: [2400, 3000] },
+  vertical: { label: 'Vertical 9:16', hint: '2160 × 3840, for phones and stories', size: [2160, 3840] },
+};
+
+// Image qualities: ambient-occlusion samples, supersampling (render larger,
+// then scale down) and occlusion detail.
+export const IMAGE_QUALITY: { [name: string]: { label: string; hint: string; samples: number; supersample: number; aoRes: number } } = {
+  draft: { label: 'Draft (fast)', hint: 'Quick check of the framing', samples: 256, supersample: 1, aoRes: 512 },
+  good: { label: 'Good', hint: 'Smooth shading and edges', samples: 1024, supersample: 2, aoRes: 1024 },
+  best: { label: 'Best (slow)', hint: 'Finest shading detail and edges', samples: 1024, supersample: 3, aoRes: 2048 },
+};
+
 // Amino acids and nucleotides, never taken as ligands.
 const STANDARD_RESIDUES = new Set([
   'ALA', 'ARG', 'ASN', 'ASP', 'CYS', 'GLN', 'GLU', 'GLY', 'HIS', 'ILE', 'LEU', 'LYS', 'MET', 'PHE', 'PRO', 'SER',
@@ -295,6 +315,9 @@ export interface ViewerHost {
   snapshot?(): void;
   // Options for videos made from the toolbar (e.g. the page's background).
   videoOptions?(): FilmOptions;
+  // Defaults for images saved from the toolbar's image menu (size, quality,
+  // transparent, background, filename, or width / height / scale).
+  imageOptions?(): any;
 }
 
 export interface RenderedImage {
@@ -343,6 +366,8 @@ export class SpeckViewer {
   private focusButton: HTMLElement | null = null;
   private colorButton: HTMLElement | null = null;
   private videoButton: HTMLElement | null = null;
+  private imageButton: HTMLElement | null = null;
+  private imageChoice: { size: string; quality: string; background: string } | null = null;
   private videoSize = '1080p';
   private lastRecipe = '';
   private flashTimer: any = null;
@@ -534,7 +559,11 @@ export class SpeckViewer {
     this.colorButton = this.addButton(output, 'palette', 'Colors', () => this.toggleColorMenu());
     this.colorButton.setAttribute('aria-haspopup', 'menu');
     this.colorButton.setAttribute('aria-expanded', 'false');
-    this.addButton(output, 'camera', 'Save PNG', () => (this.host.snapshot ? this.host.snapshot() : this.snapshot()));
+    // Hosts with their own snapshot (and no image options) keep it; otherwise a menu.
+    this.imageButton = this.addButton(output, 'camera', 'Save an image', () =>
+      this.host.snapshot && !this.host.imageOptions ? this.host.snapshot() : this.toggleImageMenu());
+    this.imageButton.setAttribute('aria-haspopup', 'menu');
+    this.imageButton.setAttribute('aria-expanded', 'false');
     this.videoButton = this.addButton(output, 'video', 'Make a video', () => this.toggleVideoMenu());
     this.videoButton.setAttribute('aria-haspopup', 'menu');
     this.videoButton.setAttribute('aria-expanded', 'false');
@@ -1235,7 +1264,7 @@ export class SpeckViewer {
   // the video; picking one plays it with the player, whose button saves it.
   toggleVideoMenu() {
     this.toggleMenu(this.videoButton, 'Make a video', (section) => {
-      const recipes = this.system ? this.studio.recipes().filter((r) => r.available) : [];
+      const recipes = this.system ? this.studio.recipes().filter((r) => r.available && r.menu !== false) : [];
       section('Make a video', recipes.map((r) => [r.name, r.label, r.description] as MenuItem), this.lastRecipe,
         (name) => {
           this.closeMenu(true);
@@ -1356,11 +1385,91 @@ export class SpeckViewer {
   // converged and returns the PNG bytes. Options: width / height (px, the
   // other side keeps the on-screen aspect) or scale, supersample, aoRes,
   // samples, transparent, background. `prepare` can adjust the cloned view.
+  // Also: size (a name in IMAGE_SIZES, instead of width / height / scale)
+  // and quality (a name in IMAGE_QUALITY; explicit samples, supersample and
+  // aoRes win).
   renderImage(options: any, prepare?: (view: any) => void): Promise<RenderedImage> {
     return this.queueExport(() => {
       this.setStatus('Rendering image…');
-      return this.renderOffscreen(options, prepare);
+      return this.renderOffscreen(this.imageSettings(options), prepare);
     });
+  }
+
+  // Options with `size` and `quality` names turned into pixels and samples.
+  private imageSettings(options: any): any {
+    const o = { ...options };
+    const has = (k: string) => o[k] !== undefined && o[k] !== null;
+    if (has('quality')) {
+      const q = IMAGE_QUALITY[o.quality];
+      if (!q) throw new Error("unknown quality '" + o.quality + "' (use " + Object.keys(IMAGE_QUALITY).join(', ') + ')');
+      for (const k of ['samples', 'supersample', 'aoRes']) if (!has(k)) o[k] = (q as any)[k];
+    }
+    if (has('size')) {
+      const named = IMAGE_SIZES[String(o.size).toLowerCase()];
+      if (Array.isArray(o.size)) {
+        [o.width, o.height] = o.size;
+      } else if (!named) {
+        throw new Error("unknown size '" + o.size + "' (use " + Object.keys(IMAGE_SIZES).join(', ') + ' or [width, height])');
+      } else if (named.size) {
+        [o.width, o.height] = named.size;
+      } else {
+        const w = this.el.clientWidth || this.view.resolution.x, h = this.el.clientHeight || this.view.resolution.y;
+        const long = named.long || 3000;
+        o.width = w >= h ? long : Math.round((long * w) / h);
+        o.height = w >= h ? Math.round((long * h) / w) : long;
+      }
+    }
+    return o;
+  }
+
+  // The camera button's menu: size, quality and background of the image,
+  // then Save; the PNG goes to the browser's downloads.
+  toggleImageMenu() {
+    const base = this.host.imageOptions ? this.host.imageOptions() || {} : {};
+    if (!this.imageChoice) {
+      this.imageChoice = {
+        size: base.size && IMAGE_SIZES[base.size] ? base.size : 'screen',
+        quality: base.quality && IMAGE_QUALITY[base.quality] ? base.quality : 'good',
+        background: base.transparent === false ? 'white' : 'transparent',
+      };
+    }
+    const c = this.imageChoice;
+    this.toggleMenu(this.imageButton, 'Save an image', (section) => {
+      section('Size', Object.keys(IMAGE_SIZES).map((k) => [k, IMAGE_SIZES[k].label, IMAGE_SIZES[k].hint] as MenuItem), c.size,
+        (v) => { c.size = v; });
+      section('Quality', Object.keys(IMAGE_QUALITY).map((k) => [k, IMAGE_QUALITY[k].label, IMAGE_QUALITY[k].hint] as MenuItem),
+        c.quality, (v) => { c.quality = v; });
+      section('Background', [['transparent', 'Transparent', 'For placing on any background'], ['white', 'White', 'Ready for slides and documents']],
+        c.background, (v) => { c.background = v; });
+      section('', [['save', '⤓ Save image', 'Render at full quality and download the PNG']], '', () => {
+        this.closeMenu(true);
+        this.saveImageFile();
+      });
+    });
+  }
+
+  // Renders the image chosen in the menu and downloads it.
+  private saveImageFile() {
+    const base = this.host.imageOptions ? this.host.imageOptions() || {} : {};
+    const c = this.imageChoice as { size: string; quality: string; background: string };
+    const options: any = { ...base, size: c.size, quality: c.quality, transparent: c.background === 'transparent' };
+    // A size picked in the menu replaces the host's own pixel settings.
+    delete options.width;
+    delete options.height;
+    delete options.scale;
+    if (c.background === 'white') options.background = '#ffffff';
+    const name = base.filename || 'speck.png';
+    this.renderImage(options).then((image) => {
+      const blob = new Blob([image.png], { type: 'image/png' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = name;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(link.href), 60000);
+      this.flash('Saved ' + name + ' (' + image.width + ' × ' + image.height + ') to your downloads');
+    }, (e) => this.flash('The image could not be made: ' + ((e && e.message) || e), 9000));
   }
 
   // Turntable (a full turn about the vertical axis in options.frames steps) or

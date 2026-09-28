@@ -79,6 +79,7 @@
   .film-sample { display: block; width: 100%; aspect-ratio: 16 / 9; margin: 6px 0 0; border-radius: 6px;
     background: #eef1f5; object-fit: cover; }
   #filmPreview, #filmSave { flex: 1; }
+  button.wide { width: 100%; margin-top: 6px; }
   .chips, .presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
   .chips button, .presets button { padding: 4px 9px; font-size: 12.5px; border-radius: 999px; }
   .chips button.active, .presets button.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
@@ -189,6 +190,21 @@
       <p class="note" id="filmNote">The video is made in your browser; nothing is uploaded. The clapperboard button in the viewer offers the same videos.</p>
       </div>
     </details>
+    <details class="sec" data-sec="export" open>
+      <summary>Save an image<span class="sum-hint">PNG</span></summary>
+      <div class="sec-body">
+      <div class="field"><span>Size</span><select id="exportSize" aria-describedby="exportAbout"></select></div>
+      <p class="note" id="exportAbout"></p>
+      <div class="field"><span>Quality</span><select id="exportQuality"></select></div>
+      <div class="field"><span>Background</span><select id="exportBackground">
+        <option value="page" selected>This page's background</option><option value="white">White</option>
+        <option value="transparent">Transparent</option></select></div>
+      <button class="primary wide" id="export">Save image</button>
+      <p class="note" id="exportNote">Rendered in your browser at full quality; nothing is uploaded. The camera button in the viewer offers the same choices.</p>
+      <button id="copyPython">Copy as Python</button>
+      <pre class="code" id="pythonCode" hidden></pre>
+      </div>
+    </details>
     <details class="sec" data-sec="colors">
       <summary>Colors</summary>
       <div class="sec-body">
@@ -297,20 +313,6 @@
       <div class="field"><span>Anti-aliasing</span><select data-trait="fxaa" data-type="number"><option value="0">Off</option><option value="1">FXAA</option><option value="2">FXAA ×2</option></select></div>
       <label class="field"><span>Unit cell color</span><input type="color" data-trait="cellColor"></label>
       <label class="row">Unit cell radius<input type="range" data-trait="cellRadius" min="0.02" max="0.4" step="0.01" data-digits="2"><span class="v"></span></label>
-      </div>
-    </details>
-    <details class="sec" data-sec="export" open>
-      <summary>Export</summary>
-      <div class="sec-body">
-      <div class="load">
-        <select id="exportSize" aria-label="Image width">
-          <option value="2000">2000 px</option><option value="3000" selected>3000 px</option><option value="4096">4096 px</option>
-        </select>
-        <button class="primary" id="export">Save PNG</button>
-      </div>
-      <label class="check"><input type="checkbox" id="exportTransparent"> Transparent background</label>
-      <button id="copyPython">Copy as Python</button>
-      <pre class="code" id="pythonCode" hidden></pre>
       </div>
     </details>
   </aside>

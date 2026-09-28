@@ -33,16 +33,6 @@ function report() {
   send('streamlit:setComponentValue', { value: value, dataType: 'json' });
 }
 
-function download(png: ArrayBuffer, name: string) {
-  const url = URL.createObjectURL(new Blob([png], { type: 'image/png' }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = name;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
 
 function createViewer() {
   viewer = new SpeckViewer(root, {
@@ -64,13 +54,9 @@ function createViewer() {
         report();
       }
     },
-    // Camera button: high-resolution, supersampled PNG.
-    snapshot: () => {
-      (viewer as SpeckViewer)
-        .renderImage(exportOptions)
-        .then((image) => download(image.png, exportOptions.filename || 'speck.png'))
-        .catch((e) => console.error('stspeck export failed', e));
-    },
+    // Camera button: a menu of image sizes and qualities, starting from the
+    // app's export_* arguments.
+    imageOptions: () => exportOptions,
   });
 }
 

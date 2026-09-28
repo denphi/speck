@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   browser resets the GPU
 
 ### Added
+- Image export with the same kind of choices as videos: the viewer's camera button opens a menu of sizes
+  (the viewer's shape at 3000 px, largest 4096 px, HD 1080p, 4K, square, portrait 4:5, vertical 9:16),
+  qualities (draft, good, best) and backgrounds (transparent, white), then saves the PNG
+- `save_image(size=..., quality=...)`: the same sizes and qualities; defaults unchanged
+- Demo site: a Save an image panel (size, quality, the page's background, white or transparent), included
+  in Copy as Python; the video examples include a film written for GFP, and 'showcase' is no longer
+  offered in the video menus (it remains available by name in Python)
 - Ready-made videos by name (`spin`, `rock`, `orbit`, `tour`, `focus`, `reveal`, `trajectory`, `showcase`):
   they find the structure's ligand or trajectory and turn a ligand toward the viewer; `seconds`, `target`,
   `title` and `subtitle` adjust them (`shots.RECIPES`, `shots.video()`)

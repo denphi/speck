@@ -17,7 +17,7 @@ const speckSelect = require('./select.js');
 const speckRecipes = require('./recipes.js');
 
 // Ready-made videos (see recipes.js): [{name, label, seconds, needs, description}].
-export const VIDEO_RECIPES: { name: string; label: string; seconds: number; needs: string | null; description: string }[] =
+export const VIDEO_RECIPES: { name: string; label: string; seconds: number; needs: string | null; description: string; menu?: boolean }[] =
   speckRecipes.RECIPES;
 
 // Output sizes by name ([width, height]).

@@ -436,3 +436,11 @@
 .ipyspeck-player button.ipyspeck-player-save:focus-visible {
   background: #1a5fcc;
 }
+
+/* The Save row of the image menu */
+.ipyspeck-menu-item[data-value=':save'] {
+  margin-top: 4px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  font-weight: 600;
+  color: #1f6feb;
+}
