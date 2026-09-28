@@ -662,7 +662,7 @@
              {type: "fly_to", selection: GFP_CHROMOPHORE, seconds: 3, face: true},
              {type: "together", shots: [{type: "rock", seconds: 3, degrees: 12},
                                         {type: "rack_focus", to: GFP_CHROMOPHORE, seconds: 2, strength: 0.7},
-                                        {type: "title", text: "The chromophore", subtitle: "Ser65-Tyr66-Gly67", seconds: 3, position: "bottom-right"}]},
+                                        {type: "title", text: "The chromophore", subtitle: "Thr65-Tyr66-Gly67 (GFP S65T)", seconds: 3, position: "bottom-right"}]},
              {type: "together", shots: [{type: "home", seconds: 4}, {type: "fade", settings: {dofStrength: 0}, seconds: 4}]}]}
   ];
   var examplesBox = document.getElementById("filmExamples");
